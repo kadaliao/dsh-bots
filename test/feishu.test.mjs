@@ -307,16 +307,39 @@ test('normalizeEvent: direct and group text, mentions resolved, other types and 
     }).event,
     { botOpenId: BOT },
   );
-  assert.equal(post.text, 'Launch\nsee the doc (https://example.com/d)\n\n```js\nrun()\n```');
+  assert.equal(post.text, 'Launch\nsee the doc (https://example.com/d)\n[image]\n\n```js\nrun()\n```', 'an image reads as [image] where it was');
+  assert.deepEqual(post.images, ['img_1'], 'and its key comes along');
   const localized = normalizeEvent(receive({ type: 'post', content: JSON.stringify({ zh_cn: { title: '', content: [[{ tag: 'text', text: '你好' }]] } }) }).event, { botOpenId: BOT });
   assert.equal(localized.text, '你好');
 
   assert.equal('threadId' in dm, false, 'a message that answers nothing has no threadId');
-  assert.equal(normalizeEvent(receive({ type: 'image', content: JSON.stringify({ image_key: 'img_x' }) }).event, { botOpenId: BOT }), null);
+  assert.equal('images' in dm, false, 'a message without images has none');
   assert.equal(normalizeEvent(receive({ senderType: 'app' }).event, { botOpenId: BOT }), null);
   assert.equal(normalizeEvent(receive({ from: BOT }).event, { botOpenId: BOT }), null);
   assert.equal(normalizeEvent(receive({ text: '@_user_1', mentions: [mention(1, BOT, 'Acme', 'bot')] }).event, { botOpenId: BOT }), null, 'nothing left to read');
   assert.equal(normalizeEvent(receive({ content: '{broken' }).event, { botOpenId: BOT }), null);
+});
+
+test('normalizeEvent: images read as [image] where they are, with their keys; an image alone is a message', () => {
+  const image = normalizeEvent(receive({ type: 'image', content: JSON.stringify({ image_key: 'img_v2_abc-123' }), id: 'om_pic' }).event, { botOpenId: BOT });
+  assert.equal(image.text, '[image]');
+  assert.deepEqual(image.images, ['img_v2_abc-123']);
+  const post = (content) => normalizeEvent(receive({ type: 'post', content: JSON.stringify(content) }).event, { botOpenId: BOT });
+  const mixed = post({ zh_cn: { title: '', content: [[{ tag: 'text', text: 'before ' }, { tag: 'img', image_key: 'img_a' }, { tag: 'text', text: ' after' }], [{ tag: 'img', image_key: 'img_b' }], [{ tag: 'img', image_key: 'img_a' }]] } });
+  assert.equal(mixed.text, 'before [image] after\n[image]\n[image]');
+  assert.deepEqual(mixed.images, ['img_a', 'img_b'], 'each image once, in order');
+  const only = post({ title: '', content: [[{ tag: 'img', image_key: 'img_only' }]] });
+  assert.equal(only.text, '[image]', 'a post of images alone is not dropped');
+  assert.deepEqual(only.images, ['img_only']);
+  const many = post({ title: 'shots', content: Array.from({ length: 12 }, (_, i) => [{ tag: 'img', image_key: `img_${i}` }]) });
+  assert.equal(many.images.length, 10, 'at most ten');
+  assert.equal((many.text.match(/\[image\]/g) ?? []).length, 12, 'every one keeps its place');
+  const odd = post({ title: '', content: [[{ tag: 'img', image_key: '../../x' }, { tag: 'img' }]] });
+  assert.equal(odd.text, '[image][image]');
+  assert.equal('images' in odd, false, 'a key that is no image key is not kept');
+  // Images of other messages (a quoted one, a topic, a forward) stay placeholders.
+  const apiPost = { msg_type: 'post', body: { content: JSON.stringify({ title: '', content: [[{ tag: 'text', text: 'see ' }, { tag: 'img', image_key: 'img_q' }]] }) } };
+  assert.equal(feishu.messageText(apiPost), 'see [image]');
 });
 
 test('normalizeEvent: threadId is the root message of a reply chain or topic, never the topic id', () => {
@@ -871,6 +894,76 @@ test('BOTS_FEISHU_API sets the base, and with no Lark base nothing goes to Lark'
   }
 });
 
+// --- images ---------------------------------------------------------------------------
+
+const PNG_BYTES = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(24).fill(1)]);
+const JPEG_BYTES = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, ...new Array(24).fill(2)]);
+const bytesReply = (bytes, type = 'image/png', headers = {}) => new Response(bytes, { status: 200, headers: { 'content-type': type, ...headers } });
+
+test('images: read by message id and image key, each on its own; one that fails, is too big or no image is left out', async () => {
+  let rejectOnce = true;
+  const platform = fakePlatform({
+    routes: {
+      'GET /open-apis/im/v1/messages/om_pic/resources/*': (call, p) => {
+        assert.equal(call.search, '?type=image');
+        assert.ok(p.tokens.has(call.auth.replace(/^Bearer /, '')), 'with the tenant token');
+        const key = call.path.split('/').pop();
+        if (key === 'img_png') return bytesReply(PNG_BYTES);
+        if (key === 'img_jpg') return bytesReply(JPEG_BYTES, 'application/octet-stream');
+        if (key === 'img_gone') return reply(400, { code: 234003, msg: 'File not in msg.' });
+        if (key === 'img_text') return bytesReply(enc.encode('hello'), 'text/plain');
+        if (key === 'img_big') return bytesReply(PNG_BYTES, 'image/png', { 'content-length': String(30 * 1024 * 1024) });
+        if (key === 'img_renew' && rejectOnce) {
+          rejectOnce = false;
+          return reply(400, { code: 99991663, msg: 'Invalid access token for authorization.' });
+        }
+        if (key === 'img_renew') return bytesReply(PNG_BYTES);
+        return null;
+      },
+    },
+  });
+  const h = harness({ platform });
+  await online(h);
+  const got = await h.c.readImages({ messageId: 'om_pic', images: ['img_png', 'img_gone', 'img_jpg', 'img_text', 'img_big', 'img_renew'] });
+  assert.deepEqual(
+    got.map((x) => [x.mediaType, x.data.length]),
+    [
+      ['image/png', PNG_BYTES.length],
+      ['image/jpeg', JPEG_BYTES.length],
+      ['image/png', PNG_BYTES.length],
+    ],
+    'the type comes from the bytes; a rejected token is renewed once',
+  );
+  assert.ok(got[0].data instanceof Uint8Array);
+  assert.deepEqual(Buffer.from(got[1].data), Buffer.from(JPEG_BYTES));
+  const notRead = h.logs.filter((l) => /an image of a message was not read/.test(l));
+  assert.equal(notRead.length, 3);
+  assert.match(notRead.join('\n'), /File not in msg/);
+  assert.match(notRead.join('\n'), /larger than 20 MB/);
+  assert.match(notRead.join('\n'), /not a PNG, JPEG, WebP or GIF/);
+  // Nothing to read: nothing asked.
+  const before = platform.calls.length;
+  assert.deepEqual(await h.c.readImages({ messageId: 'om_pic', images: [] }), []);
+  assert.deepEqual(await h.c.readImages({ messageId: 'om_pic', images: ['../../etc'] }), []);
+  assert.equal(platform.calls.length, before);
+  assertNoSecrets(h);
+  await h.c.stop();
+});
+
+test('images without the permission: the message goes on, the advice is logged once, and it stops asking', async () => {
+  const platform = fakePlatform({
+    routes: { 'GET /open-apis/im/v1/messages/*': () => reply(400, { code: 99991672, msg: 'Access denied. One of the following scopes is required: [im:message:readonly]' }) },
+  });
+  const h = harness({ platform });
+  await online(h);
+  assert.deepEqual(await h.c.readImages({ messageId: 'om_a', images: ['img_1'] }), []);
+  assert.deepEqual(await h.c.readImages({ messageId: 'om_b', images: ['img_2'] }), []);
+  assert.equal(platform.of('GET', /\/resources\//).length, 1, 'a missing permission stops the downloads');
+  assert.equal(h.logs.filter((l) => /no images/.test(l) && /im:message:readonly/.test(l)).length, 1);
+  assertNoSecrets(h);
+  await h.c.stop();
+});
+
 // --- with the channel hub ---------------------------------------------------------------
 
 test('with the hub: pairing in a DM, a stranger ignored, Markdown replies, a group answered in place, no replays', async () => {
@@ -972,6 +1065,74 @@ test('with the hub: pairing in a DM, a stranger ignored, Markdown replies, a gro
   const everything = JSON.stringify([logs, hub.view(roster[0]), again.view(roster[0])]);
   assert.equal(everything.includes(SECRET), false);
   assert.equal(everything.includes(TICKET), false);
+});
+
+test('with the hub: a paired person\'s images reach the bot with the text; a stranger\'s, an unaddressed and a repeated message\'s are never read', async () => {
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const file = join(mkdtempSync(join(tmpdir(), 'bots-feishu-img-')), 'channels.json');
+  const platform = fakePlatform({
+    routes: {
+      'GET /open-apis/im/v1/messages/*': (call) => {
+        if (!call.path.includes('/resources/')) return null;
+        return call.path.endsWith('/img_bad') ? reply(400, { code: 234003, msg: 'File not in msg.' }) : bytesReply(PNG_BYTES);
+      },
+    },
+  });
+  const kit = socketKit();
+  const roster = [{ id: 'atlas', handle: 'atlas', name: 'Atlas', role: 'primary', persona: '', apps: [{ id: 'fs', template: 'feishu-chat', serverName: 'feishu-chat', enabled: true, values: { appId: APP_ID, appSecret: SECRET } }] }];
+  const delivered = [];
+  const hub = createChannels({
+    file,
+    bots: () => roster,
+    entries: () => catalog(),
+    deliver: async (bot, msg) => {
+      delivered.push({ bot: bot.id, ...msg });
+      return `session-${bot.id}`;
+    },
+    running: () => false,
+    loadConnector: async () => ({ ...feishu, createConnector: (o) => feishu.createConnector({ ...o, fetchImpl: platform.fetchImpl, WebSocketImpl: kit.FakeSocket, apiBase: FEISHU, larkApiBase: LARK }) }),
+    typingEveryMs: 60_000,
+  });
+  hub.sync();
+  await flush();
+  kit.sockets.at(-1).open();
+  await flush(20);
+  const ws = kit.sockets.at(-1);
+  const downloads = () => platform.of('GET', /\/resources\//).length;
+  const pic = (extra) => receive({ type: 'image', content: JSON.stringify({ image_key: 'img_s' }), ...extra });
+
+  // a stranger's image is not read
+  ws.push(eventFrame(pic({ chatId: 'oc_dm_may', from: MAY })));
+  await flush(30);
+  assert.equal(downloads(), 0);
+  ws.push(eventFrame(receive({ text: hub.view(roster[0]).fs.code.code })));
+  await flush(30);
+
+  // a post with text and images: the text with [image] in place, and the images that could be read
+  const content = JSON.stringify({ zh_cn: { title: '', content: [[{ tag: 'text', text: 'why does it look like this?' }], [{ tag: 'img', image_key: 'img_ok' }], [{ tag: 'img', image_key: 'img_bad' }]] } });
+  ws.push(eventFrame(receive({ type: 'post', content, id: 'om_post', time: 1_800_000_000_000 })));
+  await flush(40);
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0].body, 'why does it look like this?\n[image]\n[image]');
+  assert.deepEqual(delivered[0].images.map((i) => i.mediaType), ['image/png'], 'the one Feishu would not give is left out');
+  assert.deepEqual(Buffer.from(delivered[0].images[0].data), Buffer.from(PNG_BYTES));
+  assert.equal(platform.of('GET', '/open-apis/im/v1/messages/om_post/resources/img_ok').length, 1);
+
+  // an image alone is a message
+  ws.push(eventFrame(pic({ id: 'om_pic', time: 1_800_000_000_100 })));
+  await flush(40);
+  assert.deepEqual([delivered[1].body, delivered[1].images.length], ['[image]', 1]);
+
+  // the same message again, and an image in a group that is not for the bot: nothing read
+  const before = downloads();
+  ws.push(eventFrame(pic({ id: 'om_pic', time: 1_800_000_000_100 })));
+  ws.push(eventFrame(pic({ chatId: 'oc_grp', chatType: 'group', id: 'om_grp_pic', time: 1_800_000_000_200 })));
+  await flush(40);
+  assert.equal(downloads(), before);
+  assert.equal(delivered.length, 2);
+  await hub.stopAll();
 });
 
 // --- chat context ---------------------------------------------------------------------

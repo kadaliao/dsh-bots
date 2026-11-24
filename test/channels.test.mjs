@@ -804,6 +804,55 @@ test('a message with chat context: the bot reads it after the message, a task op
   await s.hub.stopAll();
 });
 
+test('images: read through the connector only for a paired person\'s message to the team, and handed over with it', async () => {
+  const s = await paired();
+  const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+  const reads = [];
+  let answer = [{ mediaType: 'image/png', data: png }, { mediaType: 'image/png', data: 'not bytes' }, null];
+  s.c.readImages = async (msg) => {
+    reads.push(msg.messageId);
+    if (answer instanceof Error) throw answer;
+    return answer;
+  };
+  // A stranger's image, and one in a group that is not for the bot: never read.
+  s.c.emit(dm('[image]', { userId: '7', chatId: '7', userName: 'Mallory', images: ['k1'] }));
+  s.c.emit({ ...dm('[image]', { images: ['k2'] }), isDirect: false, mentioned: false, chatId: '-100', chatTitle: 'Team' });
+  // Nor is a message without images.
+  s.c.emit(dm('plain words'));
+  await flush();
+  assert.deepEqual(reads, []);
+  // A paired person's: read once, the bytes go with the text (which keeps its [image]).
+  const shot = dm('what is this? [image]', { images: ['k3'] });
+  s.c.emit(shot);
+  await flush();
+  assert.deepEqual(reads, [shot.messageId]);
+  assert.deepEqual(s.delivered.at(-1), { bot: 'atlas', header: '[Telegram · Kada]', body: 'what is this? [image]', images: [{ mediaType: 'image/png', data: png }] });
+  // The same message handed out again: not read again.
+  s.c.emit(shot);
+  await flush();
+  assert.equal(reads.length, 1);
+  // Reading fails: the message goes on with its placeholder.
+  answer = new Error('Feishu is down');
+  s.c.emit(dm('[image]', { images: ['k4'] }));
+  await flush();
+  assert.deepEqual(s.delivered.at(-1), { bot: 'atlas', header: '[Telegram · Kada]', body: '[image]' });
+  assert.ok(s.logs.some((l) => /images of a message were not read: Feishu is down/.test(l)));
+  await s.hub.stopAll();
+});
+
+test('images: a follow-up for the tasks on a Thread carries them too', async () => {
+  const ticket = { id: 'timages01', threads: ['feishu:atlas/fs:G1:om_1'] };
+  const s = await threaded({ subscribers: (key) => (key === 'feishu:atlas/fs:G1:om_1' ? [ticket] : []), toTickets: async (tickets) => tickets.map((t) => `ticket-${t.id}`) });
+  const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 9]);
+  s.conn('feishu').readImages = async () => [{ mediaType: 'image/png', data: png }];
+  s.conn('feishu').emit(group('G1', 'om_2', 'here it is [image]', { threadId: 'om_1', images: ['img_1'] }));
+  await flush();
+  assert.equal(s.handed.length, 1);
+  assert.deepEqual(s.handed[0].images, [{ mediaType: 'image/png', data: png }]);
+  assert.equal(s.handed[0].body, 'here it is [image]');
+  await s.hub.stopAll();
+});
+
 test('forwarded history on its own goes with the next message that asks about it, and only that one', async () => {
   const clock = { t: 1_000_000 };
   const s = setup({ clock });

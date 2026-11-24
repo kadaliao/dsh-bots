@@ -170,8 +170,41 @@ function fakeHarness() {
   return { ctx, tools, agentsById, emit, step, stored, web };
 }
 
+/** A chat connector stand-in whose messages may carry images it reads when asked. */
+const chats = [];
+const loadConnector = async (kind) => ({
+  kind,
+  TEXT_LIMIT: 4096,
+  createConnector(opts) {
+    const c = {
+      opts,
+      stopped: false,
+      reads: [],
+      answer: [],
+      async start() {
+        return { id: '555', username: 'acme_team_bot', name: 'Acme' };
+      },
+      async stop() {
+        c.stopped = true;
+      },
+      sent: [],
+      async send(chatId, text) {
+        c.sent.push({ chatId, text });
+      },
+      async typing() {},
+      async readImages(msg) {
+        c.reads.push(msg.messageId);
+        return c.answer;
+      },
+      emit: (msg) => opts.onMessage(msg),
+    };
+    chats.push(c);
+    return c;
+  },
+});
+
 const h = fakeHarness();
-const api = apply(h.ctx, {}, { prices: false, sweep: false, startupPumpMs: 5, complete: async () => ({ text: '{}', usage: {} }) });
+const api = apply(h.ctx, {}, { prices: false, sweep: false, startupPumpMs: 5, loadConnector, complete: async () => ({ text: '{}', usage: {} }) });
 const call = (name, args, sessionId) => h.tools.get(name).execute(args, sessionId ? { agent: { session: { id: sessionId } } } : {});
 const atlas = () => api.store.find('atlas');
 const forge = () => api.store.find('forge');
@@ -263,6 +296,41 @@ test('the person writes to a task with an image: a started task gets it in its c
   const last = agentOf(t.sessionId).deliveries.at(-1).message;
   assert.deepEqual(imagesIn(last), [four.id]);
   assert.match(textIn(last), /Here it is on mobile/);
+});
+
+test('a chat message\'s images reach the bot like the panel\'s: stored, after its words, shown in the chat, and passed on with the work', async () => {
+  const until = async (ok) => {
+    for (let i = 0; i < 400 && !ok(); i += 1) await sleep(5);
+    assert.ok(ok());
+  };
+  api.routes.save.post({ bot: { id: atlas().id, apps: [{ template: 'telegram', name: 'Telegram', serverName: 'telegram', enabled: true, values: { token: '123456789:AAHimages-test-token-value' } }] } });
+  const appId = api.store.get(atlas().id).apps.find((a) => a.template === 'telegram').id;
+  await until(() => api.channels.view(api.store.get(atlas().id))[appId]?.state === 'connected');
+  const c = chats.find((x) => !x.stopped);
+  const { code } = await api.routes['channels/code'].post({ botId: atlas().id, appId });
+  c.emit({ chatId: '42', messageId: '1', userId: '42', userName: 'Kada', text: `/start ${code}`, isDirect: true, mentioned: true });
+  await until(() => c.sent.length > 0);
+  // Two images came; the attachment store refuses the second (its bytes are no PNG): the first goes on.
+  c.answer = [
+    { mediaType: 'image/png', data: new Uint8Array(Buffer.from(PNG, 'base64')) },
+    { mediaType: 'image/png', data: new Uint8Array(Buffer.from('not a png')) },
+  ];
+  c.emit({ chatId: '42', messageId: '2', userId: '42', userName: 'Kada', text: 'Why is checkout broken?\n[image]\n[image]', isDirect: true, mentioned: true, images: ['k1', 'k2'] });
+  const sid = atlas().sessionId;
+  await until(() => /checkout/.test(textIn(agentOf(sid).deliveries.at(-1).message)));
+  assert.deepEqual(c.reads, ['2']);
+  const delivered = agentOf(sid).deliveries.at(-1).message;
+  const [id] = imagesIn(delivered);
+  assert.equal(imagesIn(delivered).length, 1);
+  assert.match(textIn(delivered), /\[Telegram · Kada\]/);
+  assert.match(textIn(delivered), /Why is checkout broken\?\n\[image\]\n\[image\]/, 'the words keep where the images were');
+  assert.match(textIn(delivered), new RegExp(`\\[Image attached: ${id}\\.`));
+  // The turn takes it: the chat shows the image, and the work handed out carries it.
+  const [r] = await h.step(sid, { calls: [{ name: 'bot_send_message', args: { to: '@forge', text: 'Fix checkout.' } }] });
+  const shown = api.store.messages({ bot: atlas().id }).find((m) => m.via === 'telegram' && /checkout/.test(m.text));
+  assert.deepEqual(shown.images, [id]);
+  assert.match(r.text, /It carries an image\./);
+  assert.deepEqual(api.tickets.get(r.ticket.id).images, [id]);
 });
 
 test('the image route serves the bytes the attachment store verified, and only images a message named', async () => {

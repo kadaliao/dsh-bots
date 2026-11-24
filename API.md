@@ -229,6 +229,19 @@ Each item is ≤ 800 characters (the quoted one ≤ 2000), ≤ 8000 in all, newe
 `[file: name]`, `[image]`. It waits at most 6 s; a missing permission (`im:message:readonly`,
 `im:message.group_msg`) is logged once and that lookup rests for 30 minutes.
 
+Images (Feishu): a message may carry `images` (what the connector needs to fetch them; Feishu's image keys, at
+most 10), and such a connector has `readImages(msg)` → `Promise<{mediaType, data: Uint8Array}[]>`, which never
+throws and leaves out what it could not read. In a Feishu `image` message, or a `post` with `img` elements, each
+image reads as `[image]` where it was (an image alone is the message `[image]`); images of the quoted message, a
+topic or a forward stay `[image]` in `context`. The hub calls `readImages` only after pairing, the group check (an
+@-mention or a reply to the bot) and the replay guard, so a stranger's image is never fetched, and passes what came
+as `images` to `deliver` and `toTickets` beside `context`. Feishu reads each one from
+`GET /im/v1/messages/{message_id}/resources/{image_key}?type=image` (permission `im:message:readonly`), all at once,
+each within 20 s and 20 MB, typed by its bytes (PNG, JPEG, WebP, GIF); one that fails, is too big or is another
+format is logged and left out, a missing permission is logged once and images rest for 30 minutes. The host stores
+each through the attachment store, as an uploaded image (see v0.17 Images); one it refuses is left out. The text
+keeps its `[image]` either way.
+
 Behaviour (lib/channels.mjs):
 - A connector runs per enabled channel app with a token; it is started, restarted (token change) and stopped
   (disabled, removed, bot deleted, plugin disposed) from the roster. One token runs in one place; a second app
@@ -259,8 +272,9 @@ export function createConnector({ token, onMessage, onStatus?, fetchImpl?, WebSo
   stop(): Promise<void>,                      // idempotent; nothing reconnects afterwards
   send(chatId, text, { replyTo }?): Promise<void>,   // splits at TEXT_LIMIT
   typing(chatId): Promise<void>,
+  readImages?(msg): Promise<{ mediaType, data: Uint8Array }[]>,  // a message's `images` (Feishu); never throws
 }
-// onMessage({ chatId, messageId, userId, userName, text, isDirect, mentioned, chatTitle? })
+// onMessage({ chatId, messageId, userId, userName, text, isDirect, mentioned, chatTitle?, images? })
 // onStatus({ state: 'connecting'|'connected'|'error'|'stopped', detail?, fatal? }) — never the token
 ```
 Telegram reads `BOTS_TELEGRAM_API` (default https://api.telegram.org) so a local stand-in of the Bot API can be
@@ -1294,6 +1308,9 @@ TicketView += { images?: Image[] }       // what its assignment carries
   `content-type` the image's, `cache-control: private, max-age=31536000, immutable`; 404 for an id no message named.
 - `images.json` (`lib/images.mjs`): attachment id → `ImageAttachmentRef`, the newest 5000. Refs come from uploads and
   from the `image` blocks of every `user/message` event in a bot's home or task conversation.
+- A chat message's images (Feishu, see the connector contract) are stored the same way and reach the bot, a
+  discussion or a task follow-up as those blocks after the message's text and context; the chat message logged in
+  the timeline keeps their ids, and the work the turn hands out carries them like a panel message's.
 - To a bot, a message's images are `{ type: 'image', attachment: ImageAttachmentRef }` blocks after its text, then
   one text block: `[Image attached: <id> (<name>). To pass it on to a teammate, name its id in \`images\`.]`
   (`N images attached: …` for several). Logged messages and tickets keep `images: string[]` (ids).

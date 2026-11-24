@@ -532,7 +532,7 @@ address. The same steps work for Lark; the panel finds out which one your app be
    - required: `im:message.p2p_msg:readonly`, `im:message.group_at_msg:readonly`, `im:message:send_as_bot`
    - optional: `contact:contact.base:readonly` + `contact:user.base:readonly` (sender names),
      `im:message.reactions:write_only` (a "Typing" reaction while the team works), `im:chat:readonly` (group names),
-     `im:message:readonly` (the chat context below: the message you reply to, chat history you forward),
+     `im:message:readonly` (the images you send, and the chat context below: the message you reply to, chat history you forward),
      `im:message.group_msg` (the earlier messages of a topic; a sensitive scope an admin approves)
 4. Copy the **App ID** and **App Secret** from **Credentials & Basic Info** into the bot's **Apps** →
    **Feishu / Lark**, and save. The long connection comes up. If the panel asks you to turn on the bot,
@@ -548,6 +548,13 @@ address. The same steps work for Lark; the panel finds out which one your app be
 
 Use an app made for this team only: when several programs connect with the same App ID, Feishu hands each
 message to just one of them.
+
+**Images.** Send a picture, or a rich-text message with pictures in it, and the bot sees them as it does images
+you attach in the panel: the chat shows them, and the dispatcher hands them on with the work. The channel reads
+them from Feishu only once it knows the message is yours (paired) and for the bot, at most ten per message, each
+up to 20 MB (PNG, JPEG, WebP or GIF). Where a picture was, the text says `[image]`, so a picture that could not be
+read (no `im:message:readonly` permission, too big, another format) still shows the bot that one was there; the
+Harness log says why it was left out.
 
 **Chat context.** When your message replies to another one, sits in a topic or reply chain, or is chat
 history you forwarded to the bot, the channel reads that from Feishu before the team sees your message:
@@ -731,7 +738,8 @@ permission and restart it.
   Feishu / Lark, Telegram, Slack or Discord API when you connect a chat app (the bots' replies to paired
   people, typing indicators, and the one-line note to strangers; Feishu is also asked for the messages a paired
   person's message replies to, the topic it is in, or the chat history they forwarded to the bot; those may be other
-  people's words, unpaired ones too, and they go to the bots' model with the request and are kept with its task), and the GitHub API with GitHub Issues (reading the
+  people's words, unpaired ones too, and they go to the bots' model with the request and are kept with its task,
+  and for the images in a paired person's message to the bot), and the GitHub API with GitHub Issues (reading the
   watched repositories' labelled issues and comments, and posting the bots' answers as comments).
 
 ## Install

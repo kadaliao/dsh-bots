@@ -1603,6 +1603,21 @@ export function apply(ctx, config, deps = {}) {
       return ref;
     });
   }
+  /**
+   * The images a chat app's message brought (bytes its connector read), stored like the panel's: their
+   * references. One the attachment store refuses is left out; the message keeps its `[image]`.
+   */
+  async function chatImageRefs(list) {
+    const refs = [];
+    for (const img of (Array.isArray(list) ? list : []).slice(0, MAX_MESSAGE_IMAGES)) {
+      try {
+        refs.push(await admitImage({ mediaType: img.mediaType, data: Buffer.from(img.data).toString('base64'), ...(img.name ? { name: img.name } : {}) }));
+      } catch (error) {
+        ctx.logger?.warn?.(`bots: an image of a chat message was not kept: ${error?.message ?? error}`);
+      }
+    }
+    return refs;
+  }
   /** A message's images as content blocks: each image, then a line with their ids (a bot names them to pass them on). */
   const imageBlocks = (refs) => (refs?.length ? [...refs.map((ref) => ({ type: 'image', attachment: ref })), { type: 'text', text: imageNoteText(refs) }] : []);
   /** The images a task's assignment carries, as content blocks (those whose reference is still known). */
@@ -3238,7 +3253,7 @@ export function apply(ctx, config, deps = {}) {
    * extra slot), and the Router (the channel owner's home) is told without being woken. That notice
    * is no input of its turn: its replies do not go to that Thread because of it.
    */
-  async function followUp(list, { header, body, context = '' }, { threadKey: key, origin, owner, key: messageKey }) {
+  async function followUp(list, { header, body, context = '', images: refs = [] }, { threadKey: key, origin, owner, key: messageKey }) {
     const router = owner ? store.get(owner.id) : null;
     // A message handed out again after a restart that the Router already took (it opened these very
     // tickets) is no follow-up: it is not run twice.
@@ -3252,7 +3267,7 @@ export function apply(ctx, config, deps = {}) {
     for (const t of list) {
       const cur = tickets.get(t.id) ?? t;
       try {
-        const next = await appendToTicket(cur, body, { human: true, header: `${header}${threadNote(key)}`, context, chat: { kind: origin?.kind, who: origin?.who, threadKey: key }, ...(messageKey ? { key: `${messageKey}:${cur.id}` } : {}) });
+        const next = await appendToTicket(cur, body, { human: true, header: `${header}${threadNote(key)}`, context, chat: { kind: origin?.kind, who: origin?.who, threadKey: key }, images: refs, ...(messageKey ? { key: `${messageKey}:${cur.id}` } : {}) });
         reached.push(next);
         if (next.sessionId) sessions.push(next.sessionId);
       } catch (error) {
@@ -3303,7 +3318,9 @@ export function apply(ctx, config, deps = {}) {
     // A chat message is a user prompt like one typed in the panel, after a line naming where it came from
     // and its Thread (so the bot can name it in bot_reply). Its id comes from the chat message's, so a
     // message handed out again after a restart is not run twice.
-    deliver: async (target, { header, body, context = '' }, meta = {}) => {
+    deliver: async (target, { header, body, context = '', images: brought = [] }, meta = {}) => {
+      // The images it carries, after its words, as a panel message's (Bots 0.17).
+      const refs = await chatImageRefs(brought);
       // A reply in a chat Thread the bot spoke in before: its discussion (Bots 0.10).
       let into = null;
       try {
@@ -3322,6 +3339,7 @@ export function apply(ctx, config, deps = {}) {
             { type: 'text', text: `${note}${header}${threadNote(meta.threadKey)}` },
             { type: 'text', text: body },
             ...(context ? [{ type: 'text', text: context }] : []),
+            ...imageBlocks(refs),
           ],
           source: { kind: 'user' },
           mode: homeMode(target),
@@ -3343,6 +3361,7 @@ export function apply(ctx, config, deps = {}) {
           { type: 'text', text: body },
           // The chat context the chat app read with it (what it replies to, its topic, a forward).
           ...(context ? [{ type: 'text', text: context }] : []),
+          ...imageBlocks(refs),
         ],
         source: { kind: 'user' },
         mode: homeMode(target),
@@ -3354,7 +3373,13 @@ export function apply(ctx, config, deps = {}) {
     },
     // A new GitHub issue with the label, filed on the board (Bots 0.14).
     fileIssue: (owner, issue, at) => fileIssue(owner, issue, at),
-    toTickets: (list, msg, meta) => (meta?.card ? cardFollowUp(meta.owner, msg.body, meta.card, { key: meta.threadKey, chat: { kind: meta.origin?.kind, who: meta.origin?.who, threadKey: meta.threadKey, header: `${msg.header}${threadNote(meta.threadKey)}`, ...(msg.context ? { context: msg.context } : {}) }, messageKey: meta.key ?? '' }).then((r) => (r ? [r.sessionId] : Promise.reject(new Error('the task did not take it')))) : followUp(list, msg, meta)),
+    toTickets: async (list, { images: brought, ...msg }, meta) => {
+      const images = await chatImageRefs(brought);
+      if (!meta?.card) return followUp(list, { ...msg, images }, meta);
+      const r = await cardFollowUp(meta.owner, msg.body, meta.card, { key: meta.threadKey, chat: { kind: meta.origin?.kind, who: meta.origin?.who, threadKey: meta.threadKey, header: `${msg.header}${threadNote(meta.threadKey)}`, ...(msg.context ? { context: msg.context } : {}) }, messageKey: meta.key ?? '', images });
+      if (!r) throw new Error('the task did not take it');
+      return [r.sessionId];
+    },
     // A chat message to the dispatcher that starts with a card's reference: that card's one live task (Bots 0.13).
     cardRoute: (owner, text) => (isRouter(store.get(owner?.id)) ? leadingCard(text) : null),
     subscribers: (key) => tickets.subscribers(key),
@@ -3577,7 +3602,7 @@ export function apply(ctx, config, deps = {}) {
             // A GitHub issue filed as a card (Bots 0.14): the chat links the card, and the dispatcher's work counts toward it.
             const issueCard = issueDeliveries.get(id);
             issueDeliveries.delete(id);
-            const logged = store.log(via ? { from: 'user', to: bot.id, text: via.body, kind: 'user', via: via.kind, who: via.who, ...(thread ? { thread } : {}), ...(issueCard ? { need: issueCard } : {}) } : { from: 'user', to: bot.id, text: said, kind: 'user', ...(thread ? { thread } : {}), ...(topic ? { topic } : {}) });
+            const logged = store.log(via ? { from: 'user', to: bot.id, text: via.body, kind: 'user', via: via.kind, who: via.who, ...(thread ? { thread } : {}), ...(issueCard ? { need: issueCard } : {}), ...imageIdsOf(seen) } : { from: 'user', to: bot.id, text: said, kind: 'user', ...(thread ? { thread } : {}), ...(topic ? { topic } : {}) });
             asked(logged);
             if (home) {
               const refs = [messageRef(logged.id)];
