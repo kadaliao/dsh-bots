@@ -3680,8 +3680,38 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       if (column === 'done' && row.status !== 'done' && row.status !== 'stopped') return 'done';
       return '';
     };
+    /** The periods the board filters by: when a card was filed, in days of the person's own calendar. */
+    const BOARD_PERIODS = ['today', 'week', 'month', 'lastMonth', 'custom'];
+    /**
+     * The days a period covers, as `{from, to}` in ms: `to` is the start of the day after the last one, so
+     * the last day counts whole; 0 leaves that end open. A week starts on Monday. `custom` takes the two
+     * days of a date input (`YYYY-MM-DD`, either may be empty; the wrong way round, they are swapped).
+     */
+    function periodRange(period, custom = {}, now = Date.now()) {
+      const day = (y, m, d) => new Date(y, m, d).getTime();
+      const at = new Date(now);
+      const [y, m, d] = [at.getFullYear(), at.getMonth(), at.getDate()];
+      if (period === 'today') return { from: day(y, m, d), to: day(y, m, d + 1) };
+      if (period === 'week') {
+        const monday = d - ((at.getDay() + 6) % 7);
+        return { from: day(y, m, monday), to: day(y, m, monday + 7) };
+      }
+      if (period === 'month') return { from: day(y, m, 1), to: day(y, m + 1, 1) };
+      if (period === 'lastMonth') return { from: day(y, m - 1, 1), to: day(y, m, 1) };
+      if (period === 'custom') {
+        const dayOf = (s, plus = 0) => {
+          const x = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str(s));
+          return x ? day(Number(x[1]), Number(x[2]) - 1, Number(x[3]) + plus) : 0;
+        };
+        const [first, last] = dayOf(custom.from) && dayOf(custom.to) && dayOf(custom.from) > dayOf(custom.to) ? [custom.to, custom.from] : [custom.from, custom.to];
+        return { from: dayOf(first), to: dayOf(last, 1) };
+      }
+      return { from: 0, to: 0 };
+    }
+    /** What the board was last filtered by. Kept while the page is open, so coming back from a card finds the same list. */
+    let boardFilters = { project: '', period: '', from: '', to: '', q: '', archived: false };
     /** One card on the board: its reference and title, how far it got, who works on it, the latest word. It can be dragged to another column. */
-    function BoardCard({ t, row, onOpen, onDrag }) {
+    function BoardCard({ t, row, onOpen, onDrag, action = null }) {
       const latest = row.latest && typeof row.latest === 'object' && str(row.latest.preview).trim() ? row.latest : null;
       const bots = (Array.isArray(row.bots) ? row.bots : []).filter((b) => typeof b === 'string').slice(0, 4);
       const when = row.status === 'done' && row.endedAt ? t('needDelivered', { when: fmtAgo(t, row.endedAt) }) : fmtAgo(t, row.updatedAt);
@@ -3752,6 +3782,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           bots.length === 1 ? h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 } }, botName(t, bots[0])) : null,
           viaBadge(t, row.via, row.who),
           h('span', { style: { color: C.faint, marginLeft: 'auto' }, title: fmtDate(toMs(row.updatedAt)) }, when),
+          // What can be done to it from the list (an archived card: Restore), without opening it.
+          action ? h('span', { onClick: (e) => e.stopPropagation?.(), onKeyDown: (e) => e.stopPropagation?.(), style: { display: 'inline-flex' } }, action) : null,
         ),
       );
     }
@@ -4021,22 +4053,52 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
     }
     /**
      * The board (Bots 0.12): every request of the person's as a card, in columns (To do, In progress,
-     * Waiting for you, Done; dropped ones folded), filtered by project. File a card here or ask in the
-     * chat; drag one to In progress to start it, or to Done to mark it done.
+     * Waiting for you, Done; dropped ones folded), filtered by project, by when a card was filed and by
+     * words in it. File a card here or ask in the chat; drag one to In progress to start it, or to Done
+     * to mark it done. Cards the person archived are listed apart (Archived), and restored from there.
      */
     function NeedsView({ t, bots = [], primaryId = null, env = null, toast = () => {}, onOpen, onTasks }) {
-      const { data, failed, reload } = useJson('needs?limit=300', STATE_POLL_MS);
+      const [view, setView] = useState(boardFilters);
+      const look = (patch) => {
+        boardFilters = { ...boardFilters, ...patch };
+        setView(boardFilters);
+      };
+      // The words in the box; `view.q` is what is searched for (an input method's unfinished text is not).
+      const [typed, setTyped] = useState(view.q);
+      const range = periodRange(view.period, view);
+      const filtering = Boolean(range.from || range.to || view.q);
+      // The host filters, so a match is found however old it is; the project is picked among what came back.
+      const path = `needs?limit=300${range.from ? `&from=${range.from}` : ''}${range.to ? `&to=${range.to}` : ''}${view.q ? `&q=${encodeURIComponent(view.q)}` : ''}${view.archived ? '&archived=1' : ''}`;
+      const { data, failed, reload: reloadFirst } = useJson(path, STATE_POLL_MS);
       const { data: pdata, reload: reloadProjects } = useJson('projects', STATE_POLL_MS * 6);
+      // The pages after the first, loaded when asked for; they go when the list is another one, or is read again.
+      const [extra, setExtra] = useState({ path: '', items: [], next: null });
       const [doneShown, setDoneShown] = useState(DONE_PAGE);
       const [showStopped, setShowStopped] = useState(false);
-      const [filter, setFilter] = useState('');
       const [creating, setCreating] = useState(false);
       const [managing, setManaging] = useState(false);
       const [dragging, setDragging] = useState(null);
       const [over, setOver] = useState(null);
       const [confirm, setConfirm] = useState(null);
       const projects = projectRows(pdata);
-      const all = needRows(data);
+      // A project removed since it was picked filters nothing.
+      const filter = view.project && view.project !== 'none' && pdata && !projects.some((p) => p.id === view.project) ? '' : view.project;
+      const setFilter = (id) => look({ project: id });
+      const paged = extra.path === path;
+      const next = paged ? extra.next : (data?.next_offset ?? null);
+      const first = needRows(data);
+      const all = paged ? [...first, ...extra.items.filter((r) => !first.some((x) => x.id === r.id))] : first;
+      const reload = () => {
+        setExtra({ path: '', items: [], next: null });
+        return reloadFirst();
+      };
+      const loadMore = () =>
+        getJson(`${path}&offset=${next}`)
+          .then((r) => {
+            if (!r || !Array.isArray(r.items)) return toast(t('actionFailed'), 'error');
+            setExtra((x) => ({ path, items: [...(x.path === path ? x.items : []), ...needRows(r)], next: r.next_offset ?? null }));
+          })
+          .catch(() => toast(t('actionFailed'), 'error'));
       const unfiled = all.filter((r) => !r.ref).length;
       const items = all.filter((r) => !filter || (filter === 'none' ? !r.ref : r.projectId === filter));
       const byNewest = (a, b) => (toMs(b.updatedAt) || 0) - (toMs(a.updatedAt) || 0);
@@ -4057,7 +4119,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       const act = (row, action) =>
         postJson(`needs/${encodeURIComponent(row.id)}/${action}`, {}).then((r) => {
           if (r && r.ok !== false) {
-            toast(t(action === 'start' ? 'cardStarted' : 'cardMarkedDone'));
+            toast(t(action === 'start' ? 'cardStarted' : action === 'unarchive' ? 'cardRestored' : 'cardMarkedDone'));
             void reload();
             void refreshState();
           } else toast(r?.reason || t('actionFailed'), 'error');
@@ -4075,9 +4137,39 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           label,
           n !== undefined ? h('span', { style: { color: C.faint } }, n) : null,
         );
+      const periodChip = (id, label) => h('button', { key: id || 'any', type: 'button', className: 'dshb-chip', 'data-dsh-bots-board-period': id || 'any', 'data-active': view.period === id, onClick: () => look({ period: id }), style: { flex: 'none' } }, label);
+      const dateInput = (key, label) =>
+        h(Input, { key, type: 'date', value: view[key], 'aria-label': label, title: label, 'data-dsh-bots-board-date': key, onChange: (e) => look({ [key]: str(e.target.value) }), style: { width: 'auto', height: 26, fontSize: SMALL, flex: 'none' } });
+      const search = (value) => look({ q: str(value).trim() });
+      // When a card was filed, and the words in it: both narrow the board, and the archive.
+      const tools = h(
+        'div',
+        { 'data-dsh-bots-board-tools': true, style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
+        h('span', { style: { fontSize: SMALL, color: C.muted, flex: 'none' } }, t('boardFiled')),
+        periodChip('', t('boardAnyTime')),
+        BOARD_PERIODS.map((p) => periodChip(p, t(`boardPeriod_${p}`))),
+        view.period === 'custom' ? [dateInput('from', t('boardFrom')), h('span', { key: 'dash', style: { color: C.faint } }, '–'), dateInput('to', t('boardTo'))] : null,
+        h(Input, {
+          type: 'search',
+          value: typed,
+          placeholder: t('boardSearch'),
+          'aria-label': t('boardSearch'),
+          'data-dsh-bots-board-search': true,
+          onChange: (e) => {
+            setTyped(e.target.value);
+            if (!e.isComposing && !e.nativeEvent?.isComposing) search(e.target.value);
+          },
+          onCompositionEnd: (e) => search(e.target?.value),
+          style: { flex: '1 1 180px', maxWidth: 280, width: 'auto', height: 26, fontSize: SMALL },
+        }),
+        filtering || filter
+          ? h(Btn, { size: 'sm', kind: 'ghost', icon: Icon.close(11), onClick: () => (setTyped(''), look({ project: '', period: '', from: '', to: '', q: '' })), 'data-dsh-bots-board-clear': true }, t('boardClear'))
+          : null,
+      );
+      const more = next !== null ? h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: SMALL, color: C.muted } }, t('boardShowing', { n: all.length }), h(Btn, { size: 'sm', onClick: () => void loadMore(), 'data-dsh-bots-board-more': next }, t('boardLoadMore'))) : null;
       let body;
       if (!data && all.length === 0) body = h('div', { style: { padding: 24, color: C.faint, fontSize: SMALL, textAlign: 'center' } }, failed ? t('needsUnavailable') : t('loading'));
-      else if (all.length === 0 && projects.length === 0)
+      else if (all.length === 0 && projects.length === 0 && !filtering && !view.archived)
         body = h(Empty, { icon: Icon.target(28), title: t('needsEmptyTitle'), body: t('needsEmptyBody'), action: h(Btn, { kind: 'primary', icon: Icon.plus(12), onClick: () => setCreating(true), 'data-dsh-bots-board-new-empty': true }, t('newCard')) });
       else {
         body = h(
@@ -4092,32 +4184,46 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
                 unfiled ? chip('none', t('noProject'), unfiled) : null,
               )
             : null,
-          week.length
-            ? h(
-                'div',
-                { 'data-dsh-bots-needs-week': week.length, style: { fontSize: SMALL, color: C.muted } },
-                t('needsWeek', { n: week.length, done: weekOf((r) => r.status === 'done'), working: weekOf((r) => r.status === 'working'), waiting: weekOf((r) => needGroupOf(r) === 'needs') }),
-              )
-            : null,
-          h(
-            'div',
-            { 'data-dsh-bots-board': true, style: { display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 6 } },
-            columns.map((g) =>
+          tools,
+          // Narrowed, or the archive: how many cards that leaves. Otherwise this week at a glance.
+          filtering || view.archived
+            ? h('div', { 'data-dsh-bots-board-matches': items.length, style: { fontSize: SMALL, color: view.archived && items.length ? C.primary : C.muted, fontWeight: view.archived && items.length ? 600 : undefined } }, items.length ? t(view.archived ? 'boardArchivedCount' : 'boardMatches', { n: items.length }) : t(view.archived && !filtering && !filter ? 'boardArchivedEmpty' : 'boardNoMatches'))
+            : week.length
+              ? h(
+                  'div',
+                  { 'data-dsh-bots-needs-week': week.length, style: { fontSize: SMALL, color: C.muted } },
+                  t('needsWeek', { n: week.length, done: weekOf((r) => r.status === 'done'), working: weekOf((r) => r.status === 'working'), waiting: weekOf((r) => needGroupOf(r) === 'needs') }),
+                )
+              : null,
+          view.archived
+            ? // Put away by the person: one list, newest change first; Restore puts a card back on the board.
               h(
-                BoardColumn,
-                { key: g.id, t, col: g, rows: g.rows, count: g.id === 'done' ? doneCount : undefined, dragging, over, onOver: setOver, onDropCard: dropCard, onOpen, onDrag: setDragging },
-                g.id === 'done' && doneCount > doneShown ? h('div', null, h(Btn, { size: 'sm', kind: 'ghost', onClick: () => setDoneShown((n) => n + DONE_PAGE), 'data-dsh-bots-needs-more': true }, t('showMore'))) : null,
-              ),
-            ),
-          ),
-          stopped.length
-            ? h(
                 'div',
-                { 'data-dsh-bots-need-group': 'stopped', 'data-count': stopped.length },
-                h(Btn, { size: 'sm', kind: 'ghost', onClick: () => setShowStopped((x) => !x), 'data-dsh-bots-needs-stopped': true }, showStopped ? t('needsHideStopped') : t('needsShowStopped', { n: stopped.length })),
-                showStopped ? h('div', { style: { marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 } }, stopped.map((r) => h(BoardCard, { key: r.id, t, row: r, onOpen, onDrag: setDragging }))) : null,
+                { 'data-dsh-bots-board-archive': items.length, style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 } },
+                [...items].sort(byNewest).map((r) => h(BoardCard, { key: r.id, t, row: r, onOpen, action: h('button', { type: 'button', className: 'dshb-link', 'data-dsh-bots-need-restore': r.id, onClick: () => void act(r, 'unarchive'), style: { fontSize: TINY } }, t('cardRestore')) })),
               )
-            : null,
+            : [
+                h(
+                  'div',
+                  { key: 'board', 'data-dsh-bots-board': true, style: { display: 'flex', gap: 12, alignItems: 'flex-start', overflowX: 'auto', paddingBottom: 6 } },
+                  columns.map((g) =>
+                    h(
+                      BoardColumn,
+                      { key: g.id, t, col: g, rows: g.rows, count: g.id === 'done' ? doneCount : undefined, dragging, over, onOver: setOver, onDropCard: dropCard, onOpen, onDrag: setDragging },
+                      g.id === 'done' && doneCount > doneShown ? h('div', null, h(Btn, { size: 'sm', kind: 'ghost', onClick: () => setDoneShown((n) => n + DONE_PAGE), 'data-dsh-bots-needs-more': true }, t('showMore'))) : null,
+                    ),
+                  ),
+                ),
+                stopped.length
+                  ? h(
+                      'div',
+                      { key: 'stopped', 'data-dsh-bots-need-group': 'stopped', 'data-count': stopped.length },
+                      h(Btn, { size: 'sm', kind: 'ghost', onClick: () => setShowStopped((x) => !x), 'data-dsh-bots-needs-stopped': true }, showStopped ? t('needsHideStopped') : t('needsShowStopped', { n: stopped.length })),
+                      showStopped ? h('div', { style: { marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 } }, stopped.map((r) => h(BoardCard, { key: r.id, t, row: r, onOpen, onDrag: setDragging }))) : null,
+                    )
+                  : null,
+              ],
+          more,
         );
       }
       return h(
@@ -4132,6 +4238,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             'div',
             { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
             onTasks ? h(Btn, { size: 'sm', kind: 'ghost', icon: Icon.tasks(13), onClick: onTasks, 'data-dsh-bots-needs-tasks': true }, t('needsAllTasks')) : null,
+            // The cards put away, and back to the board from there.
+            h(Btn, { size: 'sm', kind: 'ghost', icon: view.archived ? Icon.back(12) : Icon.layers(13), onClick: () => look({ archived: !view.archived }), 'data-dsh-bots-board-archived': view.archived ? 'on' : 'off' }, view.archived ? t('boardBack') : t('boardArchived')),
             h(Btn, { size: 'sm', icon: Icon.folder(13), onClick: () => setManaging(true), 'data-dsh-bots-board-projects': true }, t('projects')),
             h(Btn, { size: 'sm', kind: 'primary', icon: Icon.plus(12), onClick: () => setCreating(true), 'data-dsh-bots-board-new': true }, t('newCard')),
           ),
@@ -4249,6 +4357,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
                     h(CardRef, { text: v.ref, 'data-dsh-bots-need-ref': v.ref }),
                     h('span', { 'data-dsh-bots-need-title': true, style: { fontWeight: 700, fontSize: 19, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, str(v.title)),
                     h(NeedChip, { t, row: v }),
+                    v.archivedAt ? h(Badge, { color: C.muted, title: fmtDate(toMs(v.archivedAt)), 'data-dsh-bots-need-archived': v.id }, t('cardArchived')) : null,
                   ),
               h(
                 'div',
@@ -4286,6 +4395,12 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
               draft === null ? h(Btn, { icon: Icon.edit(13), disabled: busy, onClick: () => setDraft(str(v.title)), 'data-dsh-bots-need-rename': v.id }, t('needRename')) : null,
               open || v.status === 'todo' ? h(Btn, { icon: Icon.check(13), disabled: busy, onClick: () => (open ? setConfirmDone(true) : void post('done', {}, t('cardMarkedDone'))), 'data-dsh-bots-need-done': v.id }, t('cardMarkDone')) : null,
               open || v.status === 'todo' ? h(Btn, { kind: 'danger', icon: Icon.stop(12), disabled: busy, onClick: () => setConfirm(true), 'data-dsh-bots-need-drop': v.id }, t('needDrop')) : null,
+              // Done or dropped: put it away, off the board; an archived one comes back.
+              v.archivedAt
+                ? h(Btn, { icon: Icon.refresh(13), disabled: busy, onClick: () => void post('unarchive', {}, t('cardRestored')), 'data-dsh-bots-need-unarchive': v.id }, t('cardRestore'))
+                : v.status === 'done' || v.status === 'stopped'
+                  ? h(Btn, { icon: Icon.layers(13), disabled: busy, title: t('cardArchiveHint'), onClick: () => void post('archive', {}, t('cardArchivedToast')), 'data-dsh-bots-need-archive': v.id }, t('cardArchive'))
+                  : null,
             ),
           ),
         ),
@@ -7629,6 +7744,9 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       const [data, setData] = useState(null);
       const [failed, setFailed] = useState(false);
       const alive = useRef(true);
+      // The path asked for now: an answer to an earlier one (a search still being typed) is dropped.
+      const current = useRef(path);
+      current.current = path;
       useEffect(() => {
         alive.current = true;
         return () => {
@@ -7639,7 +7757,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         Promise.resolve()
           .then(() => getJson(path))
           .then((r) => {
-            if (!alive.current) return;
+            if (!alive.current || current.current !== path) return;
             if (r && r.ok !== false) {
               setData(r);
               setFailed(false);
@@ -10513,6 +10631,32 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         cardDoneBody: 'Its tasks still under way are closed as done, and their work stops.',
         cardSaved: 'Saved.',
         cardMoved: 'Moved.',
+        // the board's filters and its archive
+        boardFiled: 'Filed',
+        boardAnyTime: 'Any time',
+        boardPeriod_today: 'Today',
+        boardPeriod_week: 'This week',
+        boardPeriod_month: 'This month',
+        boardPeriod_lastMonth: 'Last month',
+        boardPeriod_custom: 'Custom',
+        boardFrom: 'From this day',
+        boardTo: 'To this day (included)',
+        boardSearch: 'Search number, title or description',
+        boardClear: 'Clear filters',
+        boardMatches: 'Matching cards: {n}',
+        boardNoMatches: 'No card matches. Try other words or another period.',
+        boardArchivedCount: 'Archived cards: {n}',
+        boardArchivedEmpty: 'Nothing archived yet. A card that is done or dropped can be archived from its page.',
+        boardShowing: 'Showing the {n} most recently changed cards.',
+        boardLoadMore: 'Load more',
+        boardArchived: 'Archived',
+        boardBack: 'Back to the board',
+        cardArchive: 'Archive',
+        cardArchiveHint: 'Take it off the board. It stays under Archived, where you can search for it, open it and restore it.',
+        cardArchivedToast: 'Archived. It is under Archived on the board.',
+        cardArchived: 'Archived',
+        cardRestore: 'Restore',
+        cardRestored: 'Back on the board.',
         cardFiledWhen: 'filed {when}',
         cardFromBoard: 'Card from the board',
         cardFromBoardRef: 'Card {ref}',
@@ -11633,6 +11777,32 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         cardDoneBody: '它下面还在进行的任务会按完成关闭，工作随即停止。',
         cardSaved: '已保存。',
         cardMoved: '已移动。',
+        // the board's filters and its archive
+        boardFiled: '创建时间',
+        boardAnyTime: '不限',
+        boardPeriod_today: '今天',
+        boardPeriod_week: '本周',
+        boardPeriod_month: '本月',
+        boardPeriod_lastMonth: '上月',
+        boardPeriod_custom: '自定义',
+        boardFrom: '开始日期',
+        boardTo: '结束日期（含当天）',
+        boardSearch: '搜编号、标题或描述',
+        boardClear: '清除筛选',
+        boardMatches: '找到 {n} 张卡片',
+        boardNoMatches: '没有符合条件的卡片，换个关键词或时间范围试试。',
+        boardArchivedCount: '已归档 {n} 张卡片',
+        boardArchivedEmpty: '还没有归档的卡片。已完成或已取消的卡片，可以在卡片页里归档。',
+        boardShowing: '已显示最近有变化的 {n} 张卡片。',
+        boardLoadMore: '加载更多',
+        boardArchived: '已归档',
+        boardBack: '回到看板',
+        cardArchive: '归档',
+        cardArchiveHint: '从看板上收起来。之后还能在「已归档」里搜到、打开和恢复。',
+        cardArchivedToast: '已归档，在看板的「已归档」里可以找到。',
+        cardArchived: '已归档',
+        cardRestore: '恢复',
+        cardRestored: '已恢复到看板。',
         cardFiledWhen: '{when}创建',
         cardFromBoard: '来自看板的卡片',
         cardFromBoardRef: '卡片 {ref}',

@@ -1819,7 +1819,7 @@ export function apply(ctx, config, deps = {}) {
     if (!front) throw new Error('hire a bot first: a card needs someone to work on it');
     const bot = assignee ? resolve(assignee) : null;
     const cur = needs.get(n.id);
-    const before = { todo: cur.todo, closed: cur.closed, snapshot: cur.snapshot, botId: cur.botId };
+    const before = { todo: cur.todo, closed: cur.closed, snapshot: cur.snapshot, botId: cur.botId, archivedAt: cur.archivedAt };
     const had = cur.tickets.length;
     // The dispatcher of now keeps it (it lists the needs it named), even when the card was filed under another.
     needs.start(n.id, { botId: front.id });
@@ -2132,8 +2132,16 @@ export function apply(ctx, config, deps = {}) {
   const needOfTicket = (t) => (t ? needs.byTicket(rootTicketOf(t).id) : undefined);
   const needTasks = (n) => n.tickets.map((id) => tickets.get(id)).filter(Boolean);
   const needStatusOf = (n) => needStatus(n, needTasks(n), stageOf);
+  /** What a card must be for the person to archive it: done, or dropped. */
+  const ARCHIVABLE = ['done', 'stopped'];
   /** Keep a need's latest status (for when its tasks are pruned). */
-  const refreshNeed = (n) => (n ? needs.snapshot(n.id, needStatusOf(n)) : undefined);
+  const refreshNeed = (n) => {
+    if (!n) return undefined;
+    const s = needStatusOf(n);
+    // An archived card worked on again (a follow-up reopened its task) is back on the board.
+    if (n.archivedAt && !ARCHIVABLE.includes(s.status)) needs.unarchive(n.id);
+    return needs.snapshot(n.id, s);
+  };
   // Every change of a task may move its need.
   tickets.onChange((t) => {
     try {
@@ -2381,6 +2389,7 @@ export function apply(ctx, config, deps = {}) {
       updatedAt: Math.max(n.updatedAt, ...list.map((t) => t.updatedAt)),
       ...(s.endedAt ? { endedAt: s.endedAt } : {}),
       ...(n.closed ? { closed: n.closed } : {}),
+      ...(n.archivedAt ? { archivedAt: n.archivedAt } : {}),
     };
   }
   /** What a card in To do waits for, as the board shows it (Bots 0.13): `after` and, when it will not start by itself, `afterStuck`. */
@@ -6603,14 +6612,40 @@ export function apply(ctx, config, deps = {}) {
     if (!t) throw new Error('no such task');
     return t;
   };
-  /** GET /needs: the person's requests, newest first (`status` filters: waiting,working,…; `project`: a project's id, or `none`). */
+  /**
+   * GET /needs: the person's requests, newest first (`status` filters: waiting,working,…; `project`: a project's id, or `none`).
+   * Every filter applies before the page is cut, so a match is found however old it is: `q` (words that must all be in
+   * the card's reference, title or description, any case), `from` and `to` (filed at or after `from` and before `to`,
+   * in ms: the panel sends the days of the person's own calendar) and `archived` (`1`: the archived cards only, `all`:
+   * those too; otherwise only the cards on the board).
+   */
   function needList(url) {
     const want = (url.searchParams.get('status') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
     const limit = Math.min(300, Math.max(1, Math.floor(Number(url.searchParams.get('limit')) || 100)));
     const offset = Math.max(0, Math.floor(Number(url.searchParams.get('offset')) || 0));
     const project = (url.searchParams.get('project') ?? '').trim();
     const inProject = (n) => !project || (project === 'none' ? !projectOfNeed(n) : n.projectId === project);
-    const rows = needs.list().filter(inProject).map(needRow).filter((r) => !want.length || want.includes(r.status)).sort((a, b) => b.updatedAt - a.updatedAt);
+    const archived = (url.searchParams.get('archived') ?? '').trim();
+    const shelved = (n) => (archived === 'all' ? true : archived === '1' || archived === 'true' ? Boolean(n.archivedAt) : !n.archivedAt);
+    const at = (key) => {
+      const v = Number(url.searchParams.get(key));
+      return Number.isFinite(v) && v > 0 ? v : 0;
+    };
+    const from = at('from');
+    const to = at('to');
+    const filed = (n) => (!from || n.createdAt >= from) && (!to || n.createdAt < to);
+    const words = (url.searchParams.get('q') ?? '').toLowerCase().split(/\s+/).filter(Boolean).slice(0, 10);
+    const says = (n) => {
+      if (!words.length) return true;
+      const text = `${cardRefOf(n)}\n${n.title}\n${n.description ?? ''}`.toLowerCase();
+      return words.every((w) => text.includes(w));
+    };
+    const rows = needs
+      .list()
+      .filter((n) => shelved(n) && inProject(n) && filed(n) && says(n))
+      .map(needRow)
+      .filter((r) => !want.length || want.includes(r.status))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
     return { items: rows.slice(offset, offset + limit), next_offset: offset + limit < rows.length ? offset + limit : null };
   }
   /** How many of the person's requests wait for them (a question, or not done: the board's first group), and how many are being worked on. */
@@ -6672,6 +6707,12 @@ export function apply(ctx, config, deps = {}) {
             if (body.after !== undefined || body.startWith !== undefined) waitCard(needs.get(n.id), { after: body.after, startWith: body.startWith });
             return { ok: true, ...needView(needs.get(n.id)) };
           }
+          // Put a card that is done or dropped away, off the board; and back.
+          case 'archive':
+            if (!ARCHIVABLE.includes(needStatusOf(n).status)) throw new Error('only a card that is done or dropped can be archived: this one is not finished');
+            return { ok: true, ...needView(needs.archive(n.id)) };
+          case 'unarchive':
+            return { ok: true, ...needView(needs.unarchive(n.id)) };
           default:
             throw new Error('no such route');
         }
