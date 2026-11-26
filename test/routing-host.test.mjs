@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -2135,6 +2135,107 @@ test('workdirs: cwd follows the selected folder when workspace registration fail
   await checkTask('@forge', shared);
   writeFileSync(memberDir, 'a file');
   await checkTask('@forge', shared);
+});
+
+/** A team whose dispatcher works in `shared` and Forge and Scout in folders of their own; each has a `docs/plan.md`. */
+function filesBoot(t) {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'bots-files-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dirs = { shared: join(root, 'shared'), forge: join(root, 'engineering'), scout: join(root, 'research') };
+  for (const [who, dir] of Object.entries(dirs)) {
+    mkdirSync(join(dir, 'docs'), { recursive: true });
+    writeFileSync(join(dir, 'docs', 'plan.md'), `the plan in ${who}`);
+  }
+  writeFileSync(join(dirs.shared, 'notes.txt'), 'notes');
+  writeFileSync(join(root, 'secret.txt'), 'outside every workspace');
+  symlinkSync(join(root, 'secret.txt'), join(dirs.shared, 'link.txt'));
+  const env = boardBoot({ workdir: dirs.shared, workdirs: { forge: dirs.forge, scout: dirs.scout } });
+  t.after(env.dispose);
+  const textIn = (m) => m.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+  const listed = (query) => env.api.routes.files.get(new URL(`http://x/?${query}`));
+  return { ...env, root, dirs, textIn, listed };
+}
+
+test('files: the picker lists the folder a conversation works in; a message references its files by their full paths, and may be references alone', async (t) => {
+  const { api, h, atlas, dirs, textIn, listed } = filesBoot(t);
+  const forge = api.store.find('forge');
+  // Each conversation has its own folder: the dispatcher the shared one, Forge its own.
+  assert.deepEqual(listed(`bot=${atlas.id}`), { ok: true, root: dirs.shared, files: ['notes.txt', 'docs/plan.md'], truncated: false });
+  assert.deepEqual(listed(`bot=${atlas.id}&q=plan`).files, ['docs/plan.md']);
+  assert.equal(listed(`bot=${forge.id}`).root, dirs.forge);
+  assert.deepEqual(listed('bot=nobody'), { ok: false, reason: 'no such bot or task' });
+
+  const plan = { path: join(dirs.shared, 'docs', 'plan.md'), name: 'docs/plan.md' };
+  const r = await api.routes.send.post({ to: atlas.id, text: 'Build what this plan says.', files: ['docs/plan.md'] });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.message.files, [plan]);
+  const delivered = h.agentsById.get(r.sessionId).deliveries.at(-1).message;
+  assert.match(textIn(delivered), /Build what this plan says\./);
+  assert.ok(textIn(delivered).includes(`[File referenced: ${plan.path}. The person points you to this file on this computer`), 'named by its full path');
+  assert.deepEqual(api.routes.messages.get(new URL(`http://x/?bot=${atlas.id}`)).items.find((m) => m.id === r.message.id).files, [plan]);
+
+  // References alone are a message; nothing at all is not.
+  const alone = await api.routes.send.post({ to: atlas.id, text: '', files: ['notes.txt', 'docs/plan.md'] });
+  assert.equal(alone.message.text, '');
+  assert.deepEqual(alone.message.files.map((f) => f.name), ['notes.txt', 'docs/plan.md']);
+  assert.match(textIn(h.agentsById.get(alone.sessionId).deliveries.at(-1).message), /\[2 files referenced: /);
+  await assert.rejects(api.routes.send.post({ to: atlas.id, text: ' ', files: [] }), /must not be empty/);
+
+  // Only files of the workspace: nothing outside it, no link out of it, no folder; and nothing is sent then.
+  const before = api.store.messages({ bot: atlas.id }).length;
+  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['../secret.txt'] }), /outside the workspace/);
+  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: [join(dirs.shared, '..', 'secret.txt')] }), /not a path in the workspace/);
+  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['link.txt'] }), /outside the workspace/);
+  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['docs'] }), /is not a file/);
+  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['../engineering/docs/plan.md'] }), /outside the workspace/, 'a teammate\'s folder is another workspace');
+  // A file moved after it was picked: the message is refused, saying so.
+  renameSync(join(dirs.shared, 'notes.txt'), join(dirs.shared, 'notes-old.txt'));
+  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['notes.txt'] }), /no file notes\.txt in the workspace: it was moved or deleted/);
+  assert.equal(api.store.messages({ bot: atlas.id }).length, before);
+});
+
+test('files: work handed to a teammate in another folder carries the references by their full paths, not a same-named file of its own', async (t) => {
+  const { api, h, atlas, made, dirs, textIn, listed } = filesBoot(t);
+  const plan = { path: join(dirs.shared, 'docs', 'plan.md'), name: 'docs/plan.md' };
+  const sent = await api.routes.send.post({ to: atlas.id, text: 'Build what this plan says.', files: ['docs/plan.md'] });
+  // The dispatcher hands it on without naming the file: the task carries it.
+  const [r] = await h.step(sent.sessionId, { calls: [{ name: 'bot_send_message', args: { to: '@forge', text: 'Build the feature in the plan.' } }] });
+  assert.equal(r.ok, true);
+  assert.match(r.text, /It carries a file reference\./);
+  const task = api.tickets.get(r.ticket.id);
+  assert.deepEqual(task.files, [plan]);
+  assert.deepEqual(api.ticketView(task).files, [plan]);
+  // Forge works in its own folder, which has a docs/plan.md too: its assignment names the dispatcher's.
+  assert.equal(made.find((m) => m.sessionId === task.sessionId).workspaceId, `ws:${dirs.forge}`);
+  const first = textIn(h.agentsById.get(task.sessionId).deliveries[0].message);
+  assert.ok(first.includes(`[File referenced: ${plan.path}.`));
+  assert.ok(!first.includes(join(dirs.forge, 'docs', 'plan.md')));
+  assert.deepEqual(api.store.messages({ bot: task.botId }).find((m) => m.ticket === task.id && m.kind === 'dm').files, [plan]);
+  // The next turn of the dispatcher has no references of its own.
+  await api.routes.send.post({ to: atlas.id, text: 'And tell Scout.' });
+  const [next] = await h.step(sent.sessionId, { calls: [{ name: 'bot_send_message', args: { to: '@scout', text: 'Forge is on the plan.' } }] });
+  assert.doesNotMatch(next.text, /carries/);
+  assert.equal(api.tickets.get(next.ticket.id).files, undefined);
+
+  // A sub-task carries the task's references; by then the file was moved, and the assignment says so.
+  renameSync(plan.path, join(dirs.shared, 'docs', 'plan-final.md'));
+  const [sub] = await h.step(task.sessionId, { calls: [{ name: 'bot_send_message', args: { to: '@scout', text: 'Review the plan.' } }] });
+  const child = api.tickets.get(sub.ticket.id);
+  assert.deepEqual(child.files, [plan]);
+  assert.ok(textIn(h.agentsById.get(child.sessionId).deliveries[0].message).includes(`[File referenced: ${plan.path} (not there now: moved or deleted).`));
+
+  // On a task's page the folder is the task's: the same path names Forge's own file there.
+  assert.equal(listed(`ticket=${task.id}`).root, dirs.forge);
+  const own = { path: join(dirs.forge, 'docs', 'plan.md'), name: 'docs/plan.md' };
+  await api.request('POST', `/__dsh_bots/tickets/${task.id}/message`, { text: '', files: ['docs/plan.md'] });
+  const last = textIn(h.agentsById.get(task.sessionId).deliveries.at(-1).message);
+  assert.ok(last.includes(`[File referenced: ${own.path}.`));
+  await assert.rejects(api.request('POST', `/__dsh_bots/tickets/${task.id}/message`, { text: 'x', files: ['../shared/docs/plan-final.md'] }), /outside the workspace/);
+  // A message the dispatcher adds to the task carries the references of its turn the task does not have yet.
+  const more = await api.routes.send.post({ to: atlas.id, text: 'Use the final plan.', files: ['docs/plan-final.md'] });
+  const [added] = await h.step(more.sessionId, { calls: [{ name: 'bot_send_message', args: { ticket: task.id, text: 'The plan moved: use the final one.' } }] });
+  assert.match(added.text, /It carries a file reference\./);
+  assert.ok(textIn(h.agentsById.get(task.sessionId).deliveries.at(-1).message).includes(`[File referenced: ${join(dirs.shared, 'docs', 'plan-final.md')}.`));
 });
 
 test('board: projects are kept through their routes; a card filed for the dispatcher counts its tasks, which work in the project folder', async () => {

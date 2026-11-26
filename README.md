@@ -113,6 +113,14 @@ bot answers in that message's **thread**.
   to ten a message; images alone are a message too). The bot sees them, when its model reads images, and the chat
   shows them; click one to see it large. Work handed on takes them along: a task the dispatcher opens from your
   message carries its images, and so do a lead's sub-tasks. The thread box and a task's message box take images too.
+- **Point at files of the workspace.** Click the file button beside the image button and search the folder the
+  conversation works in by file name or path (hidden files, `node_modules` and links are not listed); pick up to ten
+  files, which show above the box until you send (**×** removes one). The bot gets each file's full path and reads it
+  with its own file tools, so nothing is uploaded or copied. Work handed on keeps the reference: a teammate working in
+  another folder is pointed at the same file, not at a file of the same name in its own folder. Only files inside
+  that folder can be referenced; one that was moved or deleted before you send is refused, saying so. On a task's
+  page the folder is the task's (its project's folder, when it has one). Files cannot be dropped in: a browser does
+  not tell the page where a dropped file is, so only images are taken that way.
 - **Reply to any message.** Hover over a message and click **Reply**: it is quoted above the box (**×** or Esc drops
   it), and what you send answers it. The bot answers in a conversation of its own, **forked from its conversation at
   that message**: it sees that message and everything before it, and nothing the main chat said after it. So when
@@ -730,6 +738,8 @@ permission and restart it.
   a damaged one is kept as `tickets.json.corrupt-<time>` and tasks start empty.
 - Images you send are stored by Harness's own attachment store (`~/.dsh/attachments/`), as images pasted into a
   Harness chat are, and go to the bot's model with the message; Harness keeps them, Bots only their ids.
+- A file you reference is not copied: the message and the tasks it leads to keep its full path (in the timeline and
+  `tickets.json`), and the bot's model sees what the bot reads of it.
 - Custom endpoints and a borrowed Codex login are written to Harness's own model settings (`llm-pi-ai`) and
   credential store. With the Codex login in use, tokens Harness refreshes are written back to
   `~/.codex/auth.json`.

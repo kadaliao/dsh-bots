@@ -588,6 +588,117 @@ test('images (0.17): one attached is stored at once and the message names it; a 
   }
 });
 
+test('files: one of the workspace is picked in the composer, shown before sending and removable, and the message references it; images still drop in', async () => {
+  const { exports, hooks } = await loadClient();
+  const { ctx, seen } = fakeContext();
+  exports.apply(ctx);
+  const posts = mockFetch();
+  const base = globalThis.fetch;
+  const asked = [];
+  // The Host lists the files of the folder the conversation works in, and stores a dropped image.
+  globalThis.fetch = async (url, init) => {
+    const path = String(url);
+    if (path.startsWith('/__dsh_bots/files?')) {
+      asked.push(path);
+      const q = new URL(path, 'http://x').searchParams.get('q');
+      return { ok: true, json: async () => ({ ok: true, root: '/Users/me/bots/workspace', files: q === 'plan' ? ['docs/plan.md'] : ['README.md', 'docs/plan.md', 'src/app.js'], truncated: false }) };
+    }
+    if (path.endsWith('/images') && init?.method === 'POST') {
+      posts.push({ path, body: JSON.parse(init.body) });
+      return { ok: true, json: async () => ({ ok: true, image: { id: 'att000000001', url: '/__dsh_bots/image/att000000001', width: 800, height: 600, name: 'shot.png' } }) };
+    }
+    return base(url, init);
+  };
+  const saved = { FileReader: globalThis.FileReader, createObjectURL: URL.createObjectURL };
+  globalThis.FileReader = class {
+    readAsDataURL(file) {
+      this.result = `data:${file.type};base64,iVBORw0KGgo=`;
+      setTimeout(() => this.onload?.(), 0);
+    }
+  };
+  URL.createObjectURL = () => 'blob:preview';
+  MESSAGES.push({ id: 'm8', from: 'user', to: 'bot-a', text: '', at: Date.now() - 5_000, kind: 'user', files: [{ path: '/Users/me/bots/workspace/docs/spec.md', name: 'docs/spec.md' }] });
+  try {
+    const panel = seen.slots.find((s) => s.options.name === 'main').component;
+    const again = async (ms = 0) => {
+      await new Promise((r) => setTimeout(r, ms));
+      await flush();
+      hooks.rewind();
+      panel({});
+      await flush();
+      hooks.rewind();
+      return panel({});
+    };
+    let tree = await renderSettled(panel, {}, hooks);
+    // A message of references alone shows them: the file's name, its full path behind it.
+    const [shown] = findAll(tree, (n) => n.props['data-dsh-bots-msg-file'] === 'docs/spec.md');
+    assert.equal(shown.props.title, '/Users/me/bots/workspace/docs/spec.md');
+    assert.deepEqual(collect(shown), ['spec.md']);
+
+    // The button opens the picker, which lists the files of the bot's workspace.
+    assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-picker']).length, 0);
+    findAll(tree, (n) => n.props['data-dsh-bots-file-button'] === 'chat')[0].props.onClick();
+    tree = await again();
+    assert.equal(asked[0], '/__dsh_bots/files?bot=bot-a&q=');
+    assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-root'])[0].props['data-dsh-bots-file-root'], '/Users/me/bots/workspace');
+    const options = (node) => findAll(node, (n) => n.props['data-dsh-bots-file-option']).map((n) => n.props['data-dsh-bots-file-option']);
+    assert.deepEqual(options(tree), ['README.md', 'docs/plan.md', 'src/app.js']);
+    // Typing searches by name or path.
+    findAll(tree, (n) => n.props['data-dsh-bots-file-search'] === 'chat')[0].props.onChange({ target: { value: 'plan' } });
+    hooks.rewind();
+    panel({});
+    tree = await again(230);
+    assert.equal(asked.at(-1), '/__dsh_bots/files?bot=bot-a&q=plan');
+    assert.deepEqual(options(tree), ['docs/plan.md']);
+
+    // One click references the file: it shows above the box before sending, and can be removed.
+    findAll(tree, (n) => n.props['data-dsh-bots-file-option'] === 'docs/plan.md')[0].props.onClick();
+    hooks.rewind();
+    tree = panel({});
+    const chips = (node) => findAll(node, (n) => n.props['data-dsh-bots-file-ref']).map((n) => n.props['data-dsh-bots-file-ref']);
+    assert.deepEqual(chips(tree), ['docs/plan.md']);
+    assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-option'] === 'docs/plan.md')[0].props.disabled, true, 'picked already');
+    findAll(tree, (n) => n.props['data-dsh-bots-file-ref-remove'] === 'docs/plan.md')[0].props.onClick();
+    hooks.rewind();
+    tree = panel({});
+    assert.deepEqual(chips(tree), []);
+    assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-send'])[0].props.disabled, true, 'nothing to send');
+    findAll(tree, (n) => n.props['data-dsh-bots-file-option'] === 'docs/plan.md')[0].props.onClick();
+    hooks.rewind();
+    tree = panel({});
+
+    // References alone are a message: it names the file by its path in the workspace.
+    const [sendBtn] = findAll(tree, (n) => n.props['data-dsh-bots-send']);
+    assert.equal(sendBtn.props.disabled, false);
+    sendBtn.props.onClick();
+    await flush();
+    assert.deepEqual(posts.find((p) => p.path.endsWith('/send'))?.body, { to: 'bot-a', text: '', files: ['docs/plan.md'] });
+    hooks.rewind();
+    tree = panel({});
+    assert.deepEqual(chips(tree), [], 'the composer is clear again');
+    assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-picker']).length, 0, 'and the picker closed');
+
+    // An image dropped on the composer is still attached; a file that is no image is not, and the panel says where it goes.
+    const [box] = findAll(tree, (n) => n.props['data-dsh-bots-composer-box']);
+    box.props.onDrop({ dataTransfer: { types: ['Files'], files: [{ name: 'shot.png', type: 'image/png' }] }, preventDefault() {} });
+    tree = await again(5);
+    assert.equal(posts.filter((p) => p.path.endsWith('/images')).length, 1);
+    assert.deepEqual(findAll(tree, (n) => n.props['data-dsh-bots-attached-item']).map((n) => n.props['data-dsh-bots-attached-item']), ['ready']);
+    assert.doesNotMatch(collect(tree).join('\n'), /Only images can be dropped here/);
+    box.props.onDrop({ dataTransfer: { types: ['Files'], files: [{ name: 'plan.md', type: 'text/markdown' }] }, preventDefault() {} });
+    hooks.rewind();
+    tree = panel({});
+    assert.equal(posts.filter((p) => p.path.endsWith('/images')).length, 1, 'not uploaded');
+    assert.match(collect(tree).join('\n'), /Only images can be dropped here\. To point the bot at a file, use "Reference a file of the workspace"\./);
+    hooks.runCleanups();
+  } finally {
+    MESSAGES.pop();
+    globalThis.FileReader = saved.FileReader;
+    URL.createObjectURL = saved.createObjectURL;
+    globalThis.fetch = base;
+  }
+});
+
 test('each tab renders: profile, skills, schedules, apps, and the activity view', async () => {
   const { exports, hooks } = await loadClient();
   const { ctx, seen } = fakeContext();
@@ -2095,6 +2206,24 @@ test('tasks: the detail shows who, where from, the reports and usage; each actio
   await rerender();
   assert.equal(prevented, true);
   assert.deepEqual(posts.find((p) => p.path === '/__dsh_bots/tickets/tquestion/message').body, { text: 'Blue, please' });
+  // A file is referenced from the folder the task works in: the picker asks for the task's files.
+  const gets = [];
+  const plain = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (!String(url).startsWith('/__dsh_bots/files?')) return plain(url, init);
+    gets.push(String(url));
+    return { ok: true, json: async () => ({ ok: true, root: '/Users/me/opc', files: ['docs/plan.md'], truncated: false }) };
+  };
+  click(tree, 'data-dsh-bots-file-button', 'ticket');
+  await rerender();
+  assert.deepEqual(gets, ['/__dsh_bots/files?ticket=tquestion&q=']);
+  click(tree, 'data-dsh-bots-file-option', 'docs/plan.md');
+  await rerender(1);
+  click(tree, 'data-dsh-bots-ticket-send', 'tquestion');
+  await rerender();
+  assert.deepEqual(posts.filter((p) => p.path === '/__dsh_bots/tickets/tquestion/message').at(-1).body, { text: '', files: ['docs/plan.md'] });
+  assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-ref']).length, 0, 'sent: the composer is clear');
+  globalThis.fetch = plain;
 
   // Back to the list, then a failed task: its error, and Retry without asking.
   click(tree, 'data-dsh-bots-tasks-back');
