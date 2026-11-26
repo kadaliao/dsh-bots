@@ -256,6 +256,85 @@ test('catalog apps fill keys, paths and headers from values', async () => {
   assert.equal(zhLocale.apps.keenable.description, keenEntry.description.zh);
 });
 
+test('the Images plugin is featured beside Open Computer Use: the catalog says whether Harness has it, and one call installs it or switches it on', async () => {
+  const { IMAGES_PLUGIN } = await import('../lib/apps.mjs');
+  // A Harness plugin, not an MCP server: never an app a bot adds.
+  assert.equal(templates().some((t) => t.id === IMAGES_PLUGIN.id), false);
+  let view = (await api.routes.catalog.get()).images;
+  assert.equal(view.package, '@kadaliao/dsh-images');
+  assert.equal(view.featured, true);
+  assert.deepEqual([view.installed, view.enabled, view.ready, view.canInstall], [false, false, false, false]);
+  // Without Harness's plugin manager nothing is installed: the answer says where to do it.
+  const none = await api.routes['images/install'].post({});
+  assert.equal(none.ok, false);
+  assert.match(none.reason, /@kadaliao\/dsh-images from the Plugins page/);
+
+  const rows = [];
+  const calls = [];
+  let outcome = 'applied';
+  const drawTool = { name: 'generate_image', async execute() {} };
+  const pm = {
+    listBundles: async () => rows,
+    async installBundle(spec, options) {
+      calls.push(['install', spec, typeof options?.requestId]);
+      if (outcome === 'failed') return { changed: false, application: 'failed', stage: 'install', target: spec, error: { code: 'operation-error', diagnostic: 'registry unreachable' } };
+      rows.push({ name: spec, installed: true, enabled: true, version: '0.6.1' });
+      if (outcome === 'applied') h.tools.set('generate_image', drawTool);
+      return { changed: true, application: outcome, stage: 'install', target: spec, version: '0.6.1' };
+    },
+    async setBundleEnabled(name, enabled) {
+      calls.push(['enable', name, enabled]);
+      rows.find((r) => r.name === name).enabled = enabled;
+      h.tools.set('generate_image', drawTool);
+      return { changed: true, application: 'applied', stage: 'enable', target: name, enabled };
+    },
+  };
+  const get = h.ctx.get;
+  const toolsGet = h.ctx.tools.get;
+  h.ctx.get = (name) => (name === 'pluginManager' ? pm : get(name));
+  h.ctx.tools.get = (name) => h.tools.get(name);
+  try {
+    view = (await api.routes.catalog.get()).images;
+    assert.deepEqual([view.installed, view.canInstall], [false, true]);
+    // A failed install says why and leaves it missing.
+    outcome = 'failed';
+    const failed = await api.routes['images/install'].post({});
+    assert.equal(failed.ok, false);
+    assert.match(failed.reason, /operation-error: registry unreachable/);
+    assert.equal((await api.routes.catalog.get()).images.installed, false);
+    // Installed in a profile that loads plugins only at its start: there, but not ready.
+    outcome = 'restart-required';
+    const waiting = await api.routes['images/install'].post({});
+    assert.deepEqual([waiting.ok, waiting.application, waiting.version], [true, 'restart-required', '0.6.1']);
+    assert.deepEqual([waiting.images.installed, waiting.images.enabled, waiting.images.ready], [true, true, false]);
+    assert.deepEqual(calls.at(-1), ['install', '@kadaliao/dsh-images', 'string']);
+    // Asked again, nothing is installed twice.
+    const again = await api.routes['images/install'].post({});
+    assert.deepEqual([again.ok, again.application], [true, 'restart-required']);
+    assert.equal(calls.filter((c) => c[0] === 'install').length, 2);
+    // Installed and switched off: it is switched on, and its tool is there.
+    rows[0].enabled = false;
+    view = (await api.routes.catalog.get()).images;
+    assert.deepEqual([view.installed, view.enabled, view.ready], [true, false, false]);
+    const on = await api.routes['images/install'].post({});
+    assert.deepEqual([on.ok, on.application], [true, 'applied']);
+    assert.deepEqual(calls.at(-1), ['enable', '@kadaliao/dsh-images', true]);
+    view = (await api.routes.catalog.get()).images;
+    assert.deepEqual([view.installed, view.enabled, view.ready, view.version], [true, true, true, '0.6.1']);
+    assert.equal((await api.routes.catalog.get()).imageGen, true);
+    // A fresh install whose tool is there at once.
+    rows.length = 0;
+    h.tools.delete('generate_image');
+    outcome = 'applied';
+    const fresh = await api.routes['images/install'].post({});
+    assert.deepEqual([fresh.ok, fresh.application, fresh.images.ready], [true, 'applied', true]);
+  } finally {
+    h.ctx.get = get;
+    h.ctx.tools.get = toolsGet;
+    h.tools.delete('generate_image');
+  }
+});
+
 test('initials avatars, including pinyin', async () => {
   const { initialsOf } = await import('../lib/store.mjs');
   assert.equal(initialsOf('研究员'), 'YJ');

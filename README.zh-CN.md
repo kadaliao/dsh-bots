@@ -297,9 +297,11 @@ Bot 在普通的 Harness 会话里工作，所以 Harness 能做的它都能做�
 | 地图与本地 | 高德地图 🔑、百度地图 🔑 |
 | 自定义 | 任意本地（stdio）或远程（Streamable HTTP）MCP 服务 |
 
+  排在最前面的两个是默认推荐，都能一键安装：[Open Computer Use](#open-computer-use) 和[图片](#图片)。
+
 - **定时任务**：就是 Harness 的定时任务，也出现在「自动化」页面。Harness 没开着时错过的定时任务，下次启动时由 Harness 补跑，
   每个只补最近的那一次（这是 Harness 的规则，Bots 不另外补）；团队的定时任务多时，启动后会一下子开出好几个任务、用掉不少 token。
-- **AI 头像**：装了 [图片插件](https://github.com/kadaliao/dsh-images) 就能按 bot 的人设生成头像。bot 自己也能做：让调度员给团队换一批头像，
+- **AI 头像**：装了[图片插件](#图片)就能按 bot 的人设生成头像。bot 自己也能做：让调度员给团队换一批头像，
   说清楚想要的样子就行，也可以指给它一张本地图片。bot 画头像是在后台进行的，不耽误它回你的话：画的时候头像上有一圈在转，
   画好就换上；画好了（或没画成、为什么）bot 会收到通知并告诉你。Harness 重启会丢掉正在画的头像。
 - **图标**：应用库里每个应用都用它自己的官方 logo（有 App 的用 App Store 图标，没有的用官网或官方仓库里的 logo）。
@@ -546,6 +548,16 @@ Slack 走 Socket Mode：由 Harness 主动连到 Slack，电脑不需要公网�
 [open-computer-use](https://github.com/kadaliao/open-computer-use) 让 bot 通过无障碍树操作 macOS 应用。在应用页点「一键安装」，
 然后给 **DeepSeek Harness** 授予辅助功能权限并重启。
 
+## 图片
+
+[图片插件](https://github.com/kadaliao/dsh-images)（`@kadaliao/dsh-images`）给 bot 一个 `generate_image` 工具，用你供应商的生图模型画图、
+海报、动图，bot 的 AI 头像也靠它。它和 Open Computer Use 一样排在应用库最前面的推荐里。它是 Harness 插件，不是 MCP 服务，
+所以装一次所有 bot 都能用：在它的卡片上点「一键安装」，由 Harness 的插件管理器从 npm 装上（卡片显示「已关闭」时，点一下是把它重新打开）。
+装好后打开左侧栏的「图片」面板，在「设置」里选好生图模型。最新版发布才几个小时的话，Harness 可能先装上稍早的一版，
+之后图片插件自己会提醒更新。
+
+装好后每个 bot 都能画图，只派活的调度员除外。在 bot 资料页的「能力」里可以给某个 bot 关掉「AI 作图」，在卡片上点「添加」再打开。
+
 ## 存储与外发
 
 - `~/.dsh/cache/bots/`（`bots.json`、`channels.json` 和 `tickets.json` 只有你自己的账户能读）：`bots.json`（bot，含应用里填的 Key 和聊天 Bot Token）、`messages.jsonl`（时间线）、
@@ -583,7 +595,7 @@ https://raw.githubusercontent.com/kadaliao/dsh-plugins/main/marketplace.json
 
 想用还没发布的最新代码，改用 Git spec `git+https://github.com/kadaliao/dsh-bots.git#main`。
 
-安装后刷新一次页面。想要 AI 头像，再装上[图片插件](https://github.com/kadaliao/dsh-images)。
+安装后刷新一次页面。想要画图和 AI 头像，再装上[图片插件](#图片)：在任意 bot 的「应用」页里它的卡片上一键安装。
 
 ## 更新
 

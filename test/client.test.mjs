@@ -1154,7 +1154,7 @@ test('the zh dictionary has the Chinese persona templates and the imageGen hint'
   exports.apply(ctx);
   const { zh } = seen.locale.dict;
   assert.equal(zh.lang, 'zh');
-  assert.equal(zh.imageGenMissing, '安装「图片」插件后可用 AI 生成头像');
+  assert.equal(zh.imageGenMissing, '安装「图片」插件后可用 AI 生成头像（「应用」页的推荐里可以一键安装）');
   for (const id of ['researcher', 'coder', 'writer', 'analyst', 'ops']) assert.match(zh[`personaText_${id}`], /^你是/);
   assert.equal(zh.regionCn, '中国');
 });
@@ -1837,6 +1837,99 @@ async function withFixtures(change, fn) {
     MESSAGES.splice(0, MESSAGES.length, ...saved.messages);
   }
 }
+
+const IMAGES_ENTRY = {
+  id: 'dsh-images', package: '@kadaliao/dsh-images', ability: 'images', tool: 'generate_image', name: { en: 'Images', zh: '图片 AI 作图' }, description: { en: 'Draw pictures and posters.', zh: '画图、海报。' },
+  category: 'search', icon: 'IM', color: '#db2777', runtime: 'plugin', homepage: 'https://github.com/kadaliao/dsh-images', featured: true,
+  installed: false, enabled: false, ready: false, version: '', canInstall: true,
+};
+
+test('apps: Images is featured beside Open Computer Use, installs in one click, and Add turns drawing on for a bot', async () => {
+  const savedTools = BOTS[1].tools;
+  const fetchWas = globalThis.fetch;
+  try {
+    // Not in this Harness yet: the card offers the install, and no Add.
+    CATALOG.images = { ...IMAGES_ENTRY };
+    let v = await openTab('apps', 'bot-b');
+    let [card] = findAll(v.tree, (n) => n.props['data-dsh-bots-images']);
+    assert.equal(card.props['data-dsh-bots-images'], 'missing');
+    // It stands right after the Open Computer Use card, above the other featured apps.
+    const [ocu] = findAll(v.tree, (n) => n.props['data-dsh-bots-ocu']);
+    const order = findAll(v.tree, (n) => n === ocu || n === card || n.props['data-dsh-bots-gallery-grid']);
+    assert.deepEqual(order.slice(0, 2), [ocu, card]);
+    let text = collect(card).join(' ');
+    assert.match(text, /Images/);
+    assert.match(text, /Featured/);
+    assert.match(text, /Not installed/);
+    assert.match(text, /Harness plugin/);
+    assert.match(text, /Harness plugin @kadaliao\/dsh-images: one install serves every bot/);
+    assert.match(text, /@kadaliao\/dsh-images/);
+    assert.equal(findAll(card, (n) => n.props['data-dsh-bots-add-app'] === 'dsh-images').length, 0);
+    // One click asks the Host, which installs it through Harness's plugin manager.
+    const inner = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      if (String(url).endsWith('/images/install')) {
+        v.posts.push({ path: String(url), body: JSON.parse(init.body) });
+        CATALOG.images = { ...IMAGES_ENTRY, installed: true, enabled: true, ready: true, version: '0.6.1' };
+        return { ok: true, json: async () => ({ ok: true, application: 'applied', version: '0.6.1' }) };
+      }
+      return inner(url, init);
+    };
+    findAll(card, (n) => n.props['data-dsh-bots-images-install'])[0].props.onClick();
+    await flush();
+    await v.rerender();
+    assert.equal(v.posts.filter((p) => p.path.endsWith('/images/install')).length, 1);
+    [card] = findAll(v.tree, (n) => n.props['data-dsh-bots-images']);
+    assert.equal(card.props['data-dsh-bots-images'], 'ready');
+    text = collect(card).join(' ');
+    assert.match(text, /Installed/);
+    assert.match(text, /Every bot can draw now/);
+    // On for a bot that does not deny its tool: nothing to add.
+    let [add] = findAll(card, (n) => n.props['data-dsh-bots-add-app'] === 'dsh-images');
+    assert.equal(add.props.disabled, true);
+    assert.match(collect(add).join(' '), /Added/);
+    // Searching finds it like any app, by its name or its package.
+    for (const [q, found] of [['dsh-images', true], ['图片', true], ['tavily', false]]) {
+      findAll(v.tree, (n) => n.props['data-dsh-bots-app-search'])[0].props.onChange({ target: { value: q } });
+      await v.rerender(1);
+      assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-images']).length, found ? 1 : 0, q);
+    }
+    v.hooks.runCleanups();
+
+    // A bot with drawing turned off: Add takes the tool off its deny list.
+    BOTS[1].tools = { deny: ['bash', 'generate_image'] };
+    v = await openTab('apps', 'bot-b');
+    [card] = findAll(v.tree, (n) => n.props['data-dsh-bots-images']);
+    assert.match(collect(card).join(' '), /drawing is off for this bot/);
+    [add] = findAll(card, (n) => n.props['data-dsh-bots-add-app'] === 'dsh-images');
+    assert.equal(add.props.disabled, false);
+    add.props.onClick();
+    await flush();
+    const saved = v.posts.find((p) => p.path.endsWith('/save')).body.bot;
+    assert.equal(saved.id, 'bot-b');
+    assert.deepEqual(saved.tools, { deny: ['bash'], routerAllow: [] });
+    v.hooks.runCleanups();
+
+    // Installed but switched off in Harness, or waiting for a restart.
+    CATALOG.images = { ...IMAGES_ENTRY, installed: true, enabled: false };
+    v = await openTab('apps', 'bot-b');
+    [card] = findAll(v.tree, (n) => n.props['data-dsh-bots-images']);
+    assert.equal(card.props['data-dsh-bots-images'], 'off');
+    assert.match(collect(card).join(' '), /Turn on/);
+    v.hooks.runCleanups();
+    CATALOG.images = { ...IMAGES_ENTRY, installed: true, enabled: true };
+    v = await openTab('apps', 'bot-b');
+    [card] = findAll(v.tree, (n) => n.props['data-dsh-bots-images']);
+    assert.equal(card.props['data-dsh-bots-images'], 'restart');
+    assert.match(collect(card).join(' '), /Restart DeepSeek Harness to load it/);
+    assert.equal(findAll(card, (n) => n.props['data-dsh-bots-images-install']).length, 0);
+    v.hooks.runCleanups();
+  } finally {
+    delete CATALOG.images;
+    BOTS[1].tools = savedTools;
+    globalThis.fetch = fetchWas;
+  }
+});
 
 test('channels: the gallery offers Telegram as a chat app; its form has the token and no server name', async () => {
   await withFixtures(() => CATALOG.templates.push(TG_ENTRY), async () => {

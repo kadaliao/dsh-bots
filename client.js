@@ -6727,6 +6727,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       if (!entry) return '';
       if (isChannelEntry(entry)) return t('chatChannel');
       if (entry.transport === 'streamable-http') return t('runtimeRemote');
+      if (entry.runtime === 'plugin') return t('runtimePlugin');
       return RUNTIME_WORD[entry.runtime] ?? (entry.runtime === 'binary' ? t('runtimeBinary') : str(entry.command));
     }
     const ExtLink = ({ href, children, ...rest }) => (href ? h('a', { className: 'dshb-extlink', href, target: '_blank', rel: 'noreferrer noopener', ...rest }, children, ' ↗') : null);
@@ -6886,6 +6887,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       const [q, setQ] = useState('');
       const [cat, setCat] = useState('all');
       const [importing, setImporting] = useState(false);
+      const [imagesInstalling, setImagesInstalling] = useState(false);
       const external = useLoaded('external', 'apps/external');
       const extItems = Array.isArray(external?.items) ? external.items : [];
       const commit = (next, okText) => {
@@ -6905,6 +6907,30 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             return loadCatalog(true);
           })
           .finally(() => setInstalling(false));
+      };
+      // The Images plugin: installed once for every bot by Harness's plugin manager (or switched back on).
+      const images = catalog?.images && typeof catalog.images === 'object' && str(catalog.images.tool) ? catalog.images : null;
+      const installImages = () => {
+        setImagesInstalling(true);
+        void postJson('images/install', {})
+          .then((r) => {
+            if (r?.ok) toast(t(r.application === 'restart-required' ? 'imagesInstallRestart' : 'imagesInstallDone', { version: r.version ? ` ${r.version}` : '' }));
+            else toast(r?.reason || t('ocuInstallFailed'), 'error');
+            return loadCatalog(true);
+          })
+          .finally(() => setImagesInstalling(false));
+      };
+      // For this bot it is an ability, not an app of its own: on unless its tool is denied (a router dispatcher allows it back).
+      const imagesAbility = images ? { id: str(images.ability) || 'images', tools: [images.tool], available: [images.tool] } : null;
+      const imagesRouterDeny = new Set((bot.role === 'primary' || bot.id === store.state?.primaryId) && routerActiveOf() ? routerDenyOf(catalog) : []);
+      const botDeny = Array.isArray(bot.tools?.deny) ? bot.tools.deny.map(String) : [];
+      const botRouterAllow = Array.isArray(bot.tools?.routerAllow) ? bot.tools.routerAllow.map(String) : [];
+      const imagesOn = Boolean(images) && !botDeny.includes(images.tool) && (!imagesRouterDeny.has(images.tool) || botRouterAllow.includes(images.tool));
+      const addImages = () => {
+        const draft = { deny: botDeny, routerAllow: botRouterAllow };
+        const tools = imagesRouterDeny.has(images.tool) ? toggleRouterAbility(draft, imagesAbility, true, imagesRouterDeny) : { deny: toggleAbility(botDeny, imagesAbility, true), routerAllow: botRouterAllow };
+        setBusy(true);
+        void saveField(t, toast, bot, { tools }, t('appAdded', { name: pick(images.name, lang) })).finally(() => setBusy(false));
       };
       const entryOf = (app) => entries.find((e) => e.id === app.template) ?? null;
       const nameOf = (app, entry) => (entry && !entry.custom ? pick(entry.name, lang) : '') || str(app.name) || str(app.serverName);
@@ -6968,19 +6994,23 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       const subhead = (text, n) =>
         h('div', { style: { display: 'flex', alignItems: 'baseline', gap: 6, fontSize: SMALL, fontWeight: 700, color: C.primary, margin: '6px 0 0' } }, text, n !== undefined ? h('span', { style: { fontSize: TINY, fontWeight: 500, color: C.faint } }, n) : null);
       const ocuCard = ocuEntry ? h(OcuCard, { t, lang, entry: ocuEntry, ocu: catalog?.ocu, added: addedIds.has('open-computer-use'), busy, installing, onAdd: () => add(ocuEntry), onInstall: installOcu, onRecheck: () => void loadCatalog(true) }) : null;
+      const imagesCard = images ? h(ImagesCard, { t, lang, images, on: imagesOn, busy, installing: imagesInstalling, onAdd: addImages, onInstall: installImages, onRecheck: () => void loadCatalog(true) }) : null;
       let gallery;
       if (entries.length === 0) gallery = h('div', { style: { fontSize: SMALL, color: C.faint } }, catalog ? t('noTemplates') : t('loading'));
       else if (needle) {
         const found = entries.filter(matches);
-        gallery = found.length ? grid(found) : h('div', { style: { fontSize: SMALL, color: C.faint, padding: '16px 0' } }, t('noAppMatch', { q: q.trim() }));
-      } else if (cat === 'featured') gallery = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, ocuCard, grid(entries.filter((e) => e.featured && e.id !== 'open-computer-use')));
-      else if (cat !== 'all') gallery = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, cat === 'computer' ? ocuCard : null, grid(entries.filter((e) => e.category === cat && e.id !== 'open-computer-use')));
+        const imagesFound = images && matches({ ...images, serverName: images.package });
+        if (imagesFound) gallery = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, imagesCard, found.length ? grid(found) : null);
+        else gallery = found.length ? grid(found) : h('div', { style: { fontSize: SMALL, color: C.faint, padding: '16px 0' } }, t('noAppMatch', { q: q.trim() }));
+      } else if (cat === 'featured') gallery = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, ocuCard, imagesCard, grid(entries.filter((e) => e.featured && e.id !== 'open-computer-use')));
+      else if (cat !== 'all') gallery = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } }, cat === 'computer' ? ocuCard : null, images && cat === images.category ? imagesCard : null, grid(entries.filter((e) => e.category === cat && e.id !== 'open-computer-use')));
       else
         gallery = h(
           'div',
           { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
           subhead(t('featured')),
           ocuCard,
+          imagesCard,
           grid(entries.filter((e) => e.featured && e.id !== 'open-computer-use')),
           categories
             .filter((c) => entries.some((e) => e.category === c.id))
@@ -7262,6 +7292,77 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           : ocu && ocu.installed && added
             ? h('div', { style: { fontSize: SMALL, color: C.muted } }, t('ocuReady', { path: ocu.path }))
             : null,
+      );
+    }
+
+    /**
+     * The Images plugin, featured beside Open Computer Use: whether this Harness has it, and a one-click
+     * install through Harness's plugin manager. One install serves every bot; **Add** turns drawing back on
+     * for a bot that has it off.
+     */
+    function ImagesCard({ t, lang, images, on, busy, installing, onAdd, onInstall, onRecheck }) {
+      const state = images.ready ? 'ready' : !images.installed ? 'missing' : !images.enabled ? 'off' : 'restart';
+      const badge = { ready: [C.ok, 'ocuInstalled'], missing: [C.warn, 'ocuMissing'], off: [C.warn, 'imagesOff'], restart: [C.warn, 'imagesRestart'] }[state];
+      const spinner = h('span', { className: 'dshb-spinner', style: { borderColor: 'rgba(255,255,255,.35)', borderTopColor: '#fff' } });
+      const recheck = h(Btn, { size: 'sm', kind: 'ghost', disabled: installing, onClick: onRecheck, 'data-dsh-bots-images-recheck': true }, t('ocuRecheck'));
+      const box = (title, actions, ...lines) =>
+        h(
+          'div',
+          { style: { fontSize: SMALL, color: C.muted, padding: '9px 11px', borderRadius: 9, background: C.base, border: `1px solid ${C.border1}`, display: 'flex', flexDirection: 'column', gap: 4 } },
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } }, h('div', { style: { fontWeight: 600, color: C.primary, flex: 1 } }, title), actions),
+          lines.map((line, i) => h('div', { key: i }, line)),
+        );
+      const pkg = h('code', { className: 'dshb-mono' }, str(images.package));
+      return h(
+        'div',
+        { className: 'dshb-card', 'data-dsh-bots-template': images.id, 'data-dsh-bots-images': state, style: { display: 'flex', flexDirection: 'column', gap: 10, background: `linear-gradient(135deg, ${tint(C.label, 12)}, ${C.layer1} 60%)`, borderColor: tint(C.label, 35), padding: '14px 16px' } },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 12 } },
+          h(AppIcon, { entry: images, size: 46 }),
+          h(
+            'div',
+            { style: { flex: 1, minWidth: 0 } },
+            h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+              h('span', { style: { fontWeight: 700, fontSize: 14.5 } }, pick(images.name, lang)),
+              h(Badge, { color: C.label }, Icon.star(10), t('featured')),
+              h(Badge, { color: badge[0], title: images.version ? `${str(images.package)} ${images.version}` : str(images.package) }, t(badge[1])),
+              h('span', { className: 'dshb-mono', style: { fontSize: 11, color: C.faint } }, runtimeLabel(t, images)),
+            ),
+            h('div', { style: { fontSize: SMALL, color: C.muted, marginTop: 3, lineHeight: 1.5 } }, `${pick(images.description, lang)} ${t('imagesBlurb')}`),
+          ),
+          h(ExtLink, { href: images.homepage }, t('docs')),
+          state === 'ready'
+            ? h(
+                Btn,
+                { size: 'sm', kind: on ? 'ghost' : 'primary', icon: on ? Icon.check(12) : Icon.plus(12), disabled: on || busy, onClick: onAdd, 'data-dsh-bots-add-app': images.id, style: on ? { color: C.ok, opacity: 1 } : undefined },
+                on ? t('added') : t('add'),
+              )
+            : null,
+        ),
+        state === 'missing'
+          ? images.canInstall
+            ? box(
+                t('imagesInstallTitle'),
+                [
+                  h('span', { key: 'r' }, recheck),
+                  h(Btn, { key: 'i', size: 'sm', kind: 'primary', icon: installing ? spinner : Icon.download(12), disabled: installing, onClick: onInstall, 'data-dsh-bots-images-install': true }, installing ? t('ocuInstalling') : t('ocuInstallNow')),
+                ],
+                h('span', null, t('imagesInstallWhat'), ' ', pkg),
+                t('imagesSetUp'),
+              )
+            : box(t('imagesInstallTitle'), recheck, h('span', null, t('imagesNoManager'), ' ', pkg))
+          : state === 'off'
+            ? box(
+                t('imagesOffTitle'),
+                images.canInstall ? h(Btn, { size: 'sm', kind: 'primary', icon: installing ? spinner : Icon.check(12), disabled: installing, onClick: onInstall, 'data-dsh-bots-images-install': true }, t('imagesTurnOn')) : recheck,
+                t('imagesOffWhat'),
+              )
+            : state === 'restart'
+              ? box(t('imagesRestartTitle'), recheck, t('imagesSetUp'))
+              : h('div', { style: { fontSize: SMALL, color: C.muted } }, t(on ? 'imagesReady' : 'imagesReadyOff')),
       );
     }
 
@@ -9840,7 +9941,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         generatingAvatar: 'Generating… (up to a minute)',
         avatarGenerated: 'New avatar drawn.',
         avatarGenFailed: 'Could not generate the avatar: {reason}',
-        imageGenMissing: 'Install the Images plugin to generate avatars with AI.',
+        imageGenMissing: 'Install the Images plugin to generate avatars with AI (one click under Apps → Featured).',
         avatarType: 'Use a PNG, JPEG, WebP or GIF image.',
         avatarSize: 'The image is larger than 2 MB.',
         avatarReadFailed: 'Could not read that file.',
@@ -10008,6 +10109,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         docs: 'Docs',
         runtimeRemote: 'remote',
         runtimeBinary: 'binary',
+        runtimePlugin: 'Harness plugin',
         needsSetup: 'Needs setup',
         configure: 'Configure',
         configureTitle: 'Configure {name}',
@@ -10031,6 +10133,21 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         ocuInstallWhat: 'Adding the app only connects it to this bot; the program itself is not on this Mac yet. Install downloads the latest release from GitHub to',
         ocuAddedNotInstalled: 'Added, but the program is not installed yet',
         ocuReady: 'Installed at {path}. Running bots reconnect it now; make sure DeepSeek Harness has Accessibility permission.',
+        imagesOff: 'Turned off',
+        imagesRestart: 'Restart needed',
+        imagesBlurb: 'Comes from the Harness plugin @kadaliao/dsh-images: one install serves every bot.',
+        imagesInstallTitle: 'Install Images',
+        imagesInstallWhat: 'Harness’s plugin manager installs the latest release from npm:',
+        imagesSetUp: 'Then open the Images panel in the sidebar and choose the image model under Settings.',
+        imagesNoManager: 'No plugin manager is at hand here. On the Plugins page of Harness, install',
+        imagesOffTitle: 'Installed, but turned off in Harness',
+        imagesTurnOn: 'Turn on',
+        imagesOffWhat: 'Turning it on brings its generate_image tool back for every bot.',
+        imagesRestartTitle: 'Installed. Restart DeepSeek Harness to load it',
+        imagesInstallDone: 'Images{version} installed',
+        imagesInstallRestart: 'Images{version} installed. Restart DeepSeek Harness to load it.',
+        imagesReady: 'Every bot can draw now, and a bot’s Profile page can draw its avatar. The image model is chosen in the Images panel, under Settings.',
+        imagesReadyOff: 'Installed, but drawing is off for this bot: Add turns it on.',
         add: 'Add',
         added: 'Added',
         appAdded: '{name} added.',
@@ -10954,7 +11071,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         generatingAvatar: '生成中…（最多约一分钟）',
         avatarGenerated: '新头像已生成。',
         avatarGenFailed: 'AI 头像生成失败：{reason}',
-        imageGenMissing: '安装「图片」插件后可用 AI 生成头像',
+        imageGenMissing: '安装「图片」插件后可用 AI 生成头像（「应用」页的推荐里可以一键安装）',
         avatarType: '请使用 PNG、JPEG、WebP 或 GIF 图片。',
         avatarSize: '图片超过 2 MB。',
         avatarReadFailed: '读不了这个文件。',
@@ -11113,6 +11230,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         docs: '文档',
         runtimeRemote: '远程',
         runtimeBinary: '本地程序',
+        runtimePlugin: 'Harness 插件',
         needsSetup: '需要配置',
         configure: '配置',
         configureTitle: '配置 {name}',
@@ -11136,6 +11254,21 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         ocuInstallWhat: '「添加」只是把应用接到这个 Bot 上，程序本身还没装到这台 Mac。一键安装会从 GitHub 下载最新版到',
         ocuAddedNotInstalled: '已添加，但程序还没安装',
         ocuReady: '已安装在 {path}。运行中的 Bot 会立即重新连接；请确认 DeepSeek Harness 已有“辅助功能”权限。',
+        imagesOff: '已关闭',
+        imagesRestart: '需要重启',
+        imagesBlurb: '由 Harness 插件 @kadaliao/dsh-images 提供，装一次所有 Bot 都能用。',
+        imagesInstallTitle: '安装图片插件',
+        imagesInstallWhat: '一键安装会让 Harness 的插件管理器从 npm 装上最新版：',
+        imagesSetUp: '装好后打开左侧栏的「图片」面板，在「设置」里选好生图模型。',
+        imagesNoManager: '这里用不了插件管理器。请到 Harness 的「插件」页安装',
+        imagesOffTitle: '已安装，但在 Harness 里被关闭了',
+        imagesTurnOn: '打开',
+        imagesOffWhat: '打开后，所有 Bot 都能重新用上它的 generate_image 工具。',
+        imagesRestartTitle: '已安装，重启 DeepSeek Harness 后生效',
+        imagesInstallDone: '图片插件{version} 已安装',
+        imagesInstallRestart: '图片插件{version} 已安装，重启 DeepSeek Harness 后生效。',
+        imagesReady: '现在每个 Bot 都能画图，Bot 的资料页也能画 AI 头像。生图模型在「图片」面板的「设置」里选。',
+        imagesReadyOff: '已安装，但这个 Bot 的画图能力关着：点「添加」打开。',
         add: '添加',
         added: '已添加',
         appAdded: '已添加 {name}。',

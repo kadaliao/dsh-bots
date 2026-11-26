@@ -395,10 +395,13 @@ A bot works in ordinary Harness conversations, so everything Harness can do, a b
 | Maps & local | Amap 🔑, Baidu Maps 🔑 |
 | Custom | Any local (stdio) or remote (Streamable HTTP) MCP server |
 
+  Two are featured at the top, each with a one-click install: [Open Computer Use](#open-computer-use) and
+  [Images](#images).
+
 - **Schedules** are ordinary Harness scheduled tasks, also on the Automation page. A scheduled task missed while
   Harness was closed runs when it starts again, once (its latest occurrence): that is Harness's rule, and Bots adds
   no runs of its own. A team with many schedules can open several tasks at once after a start, and use many tokens.
-- **AI avatars**: with the [Images plugin](https://github.com/kadaliao/dsh-images), draw a bot's avatar from its persona. A bot can do it too:
+- **AI avatars**: with the [Images plugin](#images), draw a bot's avatar from its persona. A bot can do it too:
   ask the dispatcher to give the team new avatars and describe the look, or point it at an image file. A bot's
   drawing runs in the background, so it goes on answering you: a ring turns around the avatar while the picture is
   drawn, the new one shows when it is ready, and the bot hears that it is ready (or why it failed) and tells you. A restart of
@@ -725,6 +728,19 @@ and the team takes it:
 the accessibility tree. Click **Install now** on its card, then grant **DeepSeek Harness** Accessibility
 permission and restart it.
 
+## Images
+
+[Images](https://github.com/kadaliao/dsh-images) (`@kadaliao/dsh-images`) gives the bots a `generate_image`
+tool, on your provider's image model: pictures, posters, GIFs, and the bots' AI avatars. It is featured in the
+gallery beside Open Computer Use. It is a Harness plugin rather than an MCP server, so one install serves every
+bot: click **Install now** on its card and Harness's plugin manager installs it from npm (a card that says
+**Turned off** switches it back on instead). Then open the **Images** panel in the sidebar and choose the image
+model under **Settings**. Harness may pick a release a little older than the newest when the newest is only
+hours old; Images then offers the update itself.
+
+Every bot can draw once it is installed, except a dispatcher that only hands out work. **Abilities** on a bot's
+Profile page turns **Image generation** off for that bot, and **Add** on the card turns it back on.
+
 ## What it stores and sends
 
 - `~/.dsh/cache/bots/` (`bots.json`, `channels.json` and `tickets.json` are readable by your user only):
@@ -775,7 +791,8 @@ Without Discover, paste the package name into the plugin manager:
 
 For the latest unreleased code, use the Git spec `git+https://github.com/kadaliao/dsh-bots.git#main` instead.
 
-Refresh the page once after installing. For AI avatars, install [Images](https://github.com/kadaliao/dsh-images) too.
+Refresh the page once after installing. For pictures and AI avatars, install [Images](#images) too: one click
+on its card in any bot's **Apps** page.
 
 ## Updates
 

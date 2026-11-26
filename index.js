@@ -37,7 +37,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 import { createStore, initialsOf, slugify, SKILL_RE, PALETTE, MAX_SKILLS, MAX_SKILLS_ON } from './lib/store.mjs';
-import { catalog as appCatalog, CATEGORIES, mcpConfigFor } from './lib/apps.mjs';
+import { catalog as appCatalog, CATEGORIES, IMAGES_PLUGIN, mcpConfigFor } from './lib/apps.mjs';
 import { ABILITIES } from './lib/abilities.mjs';
 import { SKILL_SOURCES, importGithubSkill, importUrlSkill, inMagpieLibrary, linkLocalSkill, listGithubSkills, listLocalSkills, listMagpieSkills, magpieLibraryDir, mergeImported, parseGithub, readLinkedSkill, resolveLocalPath } from './lib/skills.mjs';
 import { ADDED_LEADS, OLD_LEADS, TEAMS, namesBot, ownTeamView, teamIdFor, teamTiming, teamView } from './lib/teams.mjs';
@@ -4148,6 +4148,65 @@ export function apply(ctx, config, deps = {}) {
   function imageGenAvailable() {
     return Boolean(imageTool());
   }
+  /**
+   * The Images plugin as the Apps tab features it: whether this Harness has it (`installed`), switched on
+   * (`enabled`), and its tool there to call now (`ready`). `canInstall`: Harness's plugin manager is at hand.
+   */
+  async function imagesState() {
+    const pm = service(ctx, 'pluginManager');
+    let row = null;
+    try {
+      row = typeof pm?.listBundles === 'function' ? ((await pm.listBundles()) ?? []).find((b) => b?.name === IMAGES_PLUGIN.package) ?? null : null;
+    } catch {
+      row = null;
+    }
+    const ready = imageGenAvailable();
+    const installed = ready || row?.installed === true;
+    return {
+      ...IMAGES_PLUGIN,
+      installed,
+      enabled: ready || (installed && row?.enabled === true),
+      ready,
+      version: typeof row?.version === 'string' ? row.version : '',
+      canInstall: typeof pm?.installBundle === 'function',
+    };
+  }
+  /** Why a change Harness's plugin manager made did not go through, in a sentence. */
+  function pluginChangeFailure(result) {
+    if (result?.application === 'cancelled') return 'the install took more than 5 minutes and was stopped';
+    if (result?.application === 'overridden') return 'another setting of this Harness keeps the plugin off; turn it on from the Plugins page';
+    if (result?.pendingBuilds?.length) return `the install waits for build scripts to be approved (${result.pendingBuilds.join(', ')}); install it from the Plugins page`;
+    const code = result?.error?.code ?? 'failed';
+    const detail = String(result?.error?.diagnostic ?? '').trim() || String(result?.packageResult?.output ?? '').trim().split(/\r?\n/).filter(Boolean).slice(-3).join(' ');
+    return detail ? `${code}: ${detail.slice(0, 400)}` : code;
+  }
+  /**
+   * Install the Images plugin through Harness's plugin manager (the latest release, from the registry), or
+   * switch it back on when it is installed and off. `application`: `applied` when its tool is there now,
+   * `restart-required` when it loads at the next start of Harness.
+   */
+  async function installImages() {
+    const pm = service(ctx, 'pluginManager');
+    const before = await imagesState();
+    if (before.ready) return { ok: true, application: 'applied', version: before.version, images: before };
+    if (!before.canInstall) return { ok: false, reason: `no plugin manager is at hand here: install ${IMAGES_PLUGIN.package} from the Plugins page of Harness` };
+    let result = null;
+    if (!before.installed) {
+      const requestId = randomUUID();
+      const timer = setTimeout(() => void Promise.resolve().then(() => pm.cancelInstall?.(requestId)).catch(() => {}), 300_000);
+      try {
+        result = await pm.installBundle(IMAGES_PLUGIN.package, { requestId });
+      } finally {
+        clearTimeout(timer);
+      }
+    } else if (!before.enabled) {
+      result = await pm.setBundleEnabled(IMAGES_PLUGIN.package, true);
+    }
+    if (result && result.application !== 'applied' && result.application !== 'restart-required') return { ok: false, reason: pluginChangeFailure(result) };
+    const images = await imagesState();
+    // Installed and on, with its tool still missing: it loads when Harness starts again.
+    return { ok: true, application: images.ready ? 'applied' : 'restart-required', version: images.version || String(result?.version ?? ''), images };
+  }
   /** The prompt an avatar is drawn from: who the bot is, as a flat, legible profile picture. */
   function avatarPrompt(bot, extra) {
     const who = [bot.name, bot.bio, bot.persona.split(/\n/)[0]].filter(Boolean).join(' — ').slice(0, 500);
@@ -4358,7 +4417,7 @@ export function apply(ctx, config, deps = {}) {
       return { bot: saved, note: ' Its avatar is now that picture.' };
     }
     if (typeof args.avatar_prompt === 'string' && args.avatar_prompt.trim()) {
-      if (!imageGenAvailable()) return { bot, note: ' No picture was drawn: AI avatars need the Images plugin (generate_image), which is not installed or is turned off. The user can install it from the plugin market, or upload a picture on the bot\'s Profile page; avatar_file takes an image file.' };
+      if (!imageGenAvailable()) return { bot, note: ' No picture was drawn: AI avatars need the Images plugin (generate_image), which is not installed or is turned off. The user can install it in the Bots panel (the Apps page of any bot, under Featured) or from the Plugins page of Harness, or upload a picture on the bot\'s Profile page; avatar_file takes an image file.' };
       if (caller.bot && caller.sessionId) {
         drawInBackground(bot, args.avatar_prompt, caller);
         return { bot, drawing: true, note: ' Its avatar picture is being drawn in the background (often a minute or more); the current avatar stays until then. A note arrives in this conversation when it is ready, or with the reason if it fails: do not wait or poll for it, carry on.' };
@@ -5274,6 +5333,8 @@ export function apply(ctx, config, deps = {}) {
       // Magpie's skill library on this machine (Bots 0.17.2): the panel offers it as a source.
       magpie: magpieLibraryDir(magpieAt) ? { root: magpieLibraryDir(magpieAt) } : null,
       imageGen: imageGenAvailable(),
+      // The Images plugin, featured in the Apps tab beside Open Computer Use.
+      images: await imagesState(),
       tools: toolRows,
       models,
       defaultModel,
@@ -5658,6 +5719,7 @@ export function apply(ctx, config, deps = {}) {
   }
 
   let ocuInstalling = false;
+  let imagesInstalling = false;
   // --- skills from elsewhere -------------------------------------------------------
   const skillDir = join(dir, 'skills');
   /** Import one skill (local folder, GitHub folder or URL) as a bot skill object, files kept under the cache. */
@@ -6328,6 +6390,17 @@ export function apply(ctx, config, deps = {}) {
           return { ok: true, version: result.version, path: result.path, ocu: { installed: true, path: result.path } };
         } finally {
           ocuInstalling = false;
+        }
+      },
+    },
+    'images/install': {
+      post: async () => {
+        if (imagesInstalling) return { ok: false, reason: 'an install is already running' };
+        imagesInstalling = true;
+        try {
+          return await installImages();
+        } finally {
+          imagesInstalling = false;
         }
       },
     },

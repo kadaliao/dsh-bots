@@ -117,6 +117,9 @@ Catalog = {
   models: ModelRow[], defaultModel: { provider, model } | null, // see Models
   skills: { name, description }[],                              // installed Harness skills
   ocu: { installed: boolean, path },                            // Open Computer Use
+  images: { id, package, ability, tool, name, description, category, icon, color, runtime: 'plugin', homepage, featured,
+            installed, enabled, ready, version, canInstall },   // the Images plugin, featured beside it: in this Harness,
+                                                                // switched on, its tool there to call; canInstall: Harness's plugin manager is at hand
   mcp: boolean,                                                 // Harness has an MCP client
   routerDeny: string[],                                         // what router mode denies the dispatcher's home
   teamDeny: string[],                                           // denied to the dispatcher while the team has more than one bot
@@ -369,6 +372,7 @@ says why an app cannot start.
 | GET | `apps/external` | – | `{ items: { from, name, serverName, template, config /* values masked */ }[] }`: MCP servers found in the configs of Codex, Claude Code, Claude Desktop, Cursor, Windsurf, Gemini and opencode |
 | POST | `apps/import` | `{ botId, names: ['<from>/<name>'] }` | `{ ok, bot, added }` |
 | POST | `ocu/install` | `{}` | installs Open Computer Use (at most 5 minutes; `an install is already running` while one runs); bots already using the app start it again. `catalog.ocu` says whether it is installed and where |
+| POST | `images/install` | `{}` | installs the Images plugin (`@kadaliao/dsh-images`) through Harness's plugin manager, or switches it on when it is installed and off (at most 5 minutes; `an install is already running` while one runs) → `{ ok, application: 'applied' \| 'restart-required', version, images }` (`images` as in `catalog.images`; `restart-required`: it loads when Harness starts again), or `{ ok: false, reason }` |
 
 ## Models
 
