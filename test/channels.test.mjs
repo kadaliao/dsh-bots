@@ -165,7 +165,7 @@ function fakeConnectors() {
   return { made, plan, load: async (kind) => module(kind), live: () => made.filter((c) => !c.stopped) };
 }
 
-function setup({ clock = { t: 1_000_000 } } = {}) {
+function setup({ clock = { t: 1_000_000 }, retryMs = 5 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'bots-channels-'));
   const entries = catalog();
   const roster = [
@@ -188,7 +188,7 @@ function setup({ clock = { t: 1_000_000 } } = {}) {
     log: (line) => logs.push(line),
     now: () => clock.t,
     typingEveryMs: 10_000,
-    retryMs: 5,
+    retryMs,
   };
   const hub = createChannels(deps);
   return { hub, roster, delivered, logs, fakes, clock, deps, dir };
@@ -461,13 +461,14 @@ test('one token runs in one place; bad tokens stay down, other failures retry', 
   assert.equal(t.hub.view(t.roster[0]).tg.state, 'connected');
   await t.hub.stopAll();
 
-  const u = setup();
+  // A retry slow enough that a loaded machine still sees the error before it comes.
+  const u = setup({ retryMs: 50 });
   u.fakes.plan.fail = new Error('socket hang up');
   u.hub.sync();
   await flush();
   view = u.hub.view(u.roster[0]).tg;
   assert.equal(view.state, 'error');
-  await new Promise((r) => setTimeout(r, 40));
+  await new Promise((r) => setTimeout(r, 150));
   await flush();
   assert.equal(u.fakes.made.length, 2, 'retried with a fresh connector');
   assert.equal(u.hub.view(u.roster[0]).tg.state, 'connected');
