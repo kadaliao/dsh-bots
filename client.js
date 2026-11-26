@@ -1824,7 +1824,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         const state = m.pending || m.failed ? h(SendState, { t, m, onRetry }) : null;
         // Images sent with it (Bots 0.17) go above its words, as a chat app shows them; a message may be images alone.
         const imgs = imagesOf(m);
-        // The workspace files it references go under its words; a message may be references alone.
+        // The files it references go under its words; a message may be references alone.
         const refs = filesOf(m);
         const worded = str(m.text).trim() !== '' || Boolean(quote);
         // A card started from the board (Bots 0.12): its reference opens it there.
@@ -2941,7 +2941,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       const retry = (m) => {
         if (!m?.local) return;
         const root = threadOfMsg(m);
-        // A message sent from here keeps its files by their paths in the workspace, as they were picked.
+        // A message sent from here keeps its files as they were picked: a path in the conversation's folder, or a full one.
         void sendText(str(m.text), root ? str(m.replyTo) || root : '', m.id, root, imagesOf(m), filesOf(m).map((f) => f.name));
       };
       const canSend = (text.trim() !== '' || att.images.length > 0 || att.files.length > 0) && !att.busy;
@@ -3008,7 +3008,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
                 { className: 'dshb-composer', 'data-dsh-bots-composer-box': true, ...dropper.box },
                 quote ? h(QuoteBar, { t, m: quote, onCancel: () => setQuote(null) }) : null,
                 h(AttachStrip, { t, att }),
-                h(FilePicker, { t, att, scope: `bot=${encodeURIComponent(bot.id)}`, attr: 'chat' }),
+                h(FilePicker, { t, att, env, scope: `bot=${encodeURIComponent(bot.id)}`, attr: 'chat' }),
                 h(
                   'div',
                   { style: { display: 'flex', alignItems: 'flex-end', gap: 8 } },
@@ -3054,6 +3054,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           ? h(ThreadPane, {
               key: open,
               t,
+              env,
               bot,
               rootId: open,
               base: index,
@@ -3075,7 +3076,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
      * its messages; a thread has no threads of its own. It polls the thread on its own, starting from
      * what the chat already knows, and tells the Host when its new replies have been read.
      */
-    function ThreadPane({ t, bot, rootId, base, local, onClose, onSend, onRetry, onSeen, onListed, toast }) {
+    function ThreadPane({ t, bot, rootId, base, local, onClose, onSend, onRetry, onSeen, onListed, toast, env }) {
       const { items, threads, reload } = useMessages(bot.id, true, rootId);
       const [text, setText] = useState('');
       const [quote, setQuote] = useState(null);
@@ -3191,7 +3192,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             { className: 'dshb-composer', ...dropper.box },
             quote ? h(QuoteBar, { t, m: quote, onCancel: () => setQuote(null), attr: 'data-dsh-bots-thread-quote' }) : null,
             h(AttachStrip, { t, att }),
-            h(FilePicker, { t, att, scope: `bot=${encodeURIComponent(bot.id)}`, attr: 'thread' }),
+            h(FilePicker, { t, att, env, scope: `bot=${encodeURIComponent(bot.id)}`, attr: 'thread' }),
             h(
               'div',
               { style: { display: 'flex', alignItems: 'flex-end', gap: 8 } },
@@ -4642,7 +4643,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
                   'div',
                   { className: 'dshb-composer', ...dropper.box },
                   h(AttachStrip, { t, att }),
-                  h(FilePicker, { t, att, scope: `ticket=${encodeURIComponent(id)}`, attr: 'ticket' }),
+                  h(FilePicker, { t, att, env, scope: `ticket=${encodeURIComponent(id)}`, attr: 'ticket' }),
                   h(
                   'div',
                   { style: { display: 'flex', alignItems: 'flex-end', gap: 8 } },
@@ -4854,7 +4855,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
     };
     /** The images of a message the Host listed (`{id, url, width, height, name?}`). */
     const imagesOf = (m) => (Array.isArray(m?.images) ? m.images.filter((i) => i && typeof i.url === 'string' && i.url.startsWith(R)) : []);
-    /** The workspace files a message or a task references (`{name, path?}`: its path in the workspace, and its full one once the Host has it). */
+    /** The files a message or a task references (`{name, path?}`: its name for show, and its full path once the Host has it). */
     const filesOf = (m) => (Array.isArray(m?.files) ? m.files.filter((f) => f && typeof f.name === 'string' && f.name !== '') : []);
     /** The last part of a path: the file's own name. */
     const baseName = (path) => str(path).split('/').pop() || str(path);
@@ -4862,8 +4863,9 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
     /**
      * The images attached to a message being written. Each is stored by the Host as soon as it is attached
      * (picked, pasted or dropped), so sending only names them. `{list, add(files), remove(key), clear(), images, busy}`:
-     * `images` are the stored ones, `busy` while one is still on its way. And the workspace files it references
-     * (`files`: their paths in the workspace, `addFile(path)`, `removeFile(path)`), chosen in the picker (`picking`).
+     * `images` are the stored ones, `busy` while one is still on its way. And the files it references (`files`:
+     * a path in the conversation's folder, or the full path of a file elsewhere; `addFile(path)`,
+     * `removeFile(path)`), chosen in the picker (`picking`).
      */
     function useAttachments(t, toast) {
       const [list, setList] = useState([]);
@@ -4972,35 +4974,56 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       );
     }
 
-    /** The "reference a file of the workspace" button of a composer: it opens (and closes) the picker above the box. */
+    /** The "reference a file" button of a composer: it opens (and closes) the picker above the box. */
     function FileButton({ t, att, attr, size = 34 }) {
       return h(Btn, { kind: 'ghost', icon: Icon.file(16), title: t('attachFile'), 'aria-expanded': att.picking, onClick: () => att.setPicking(!att.picking), 'data-dsh-bots-file-button': attr, style: { width: size, height: size, borderRadius: 9, flex: 'none' } });
     }
 
     /**
-     * The picker of a composer: the files of the folder its conversation works in (`scope`: `bot=<id>` or
-     * `ticket=<id>`), searched by name or path as the Host lists them. One click references a file; it stays
-     * open for more.
+     * The picker of a composer: files of this computer, searched by name or path as the Host lists them. It
+     * starts in the folder the conversation works in (`scope`: `bot=<id>` or `ticket=<id>`), and a bot is not
+     * tied to it: a full path typed or pasted (`/…`, `~/…`) looks in the folder it names, and "Another folder"
+     * opens the Host's folder dialog. One click references a file; it stays open for more.
      */
     function FilePicker(props) {
       return props.att.picking ? h(FilePickerList, props) : null;
     }
-    function FilePickerList({ t, att, scope, attr }) {
+    function FilePickerList({ t, att, scope, attr, env }) {
       const [q, setQ] = useState('');
-      const asked = useDebounced(q, 200).trim();
+      const settled = useDebounced(q, 200).trim();
+      // A cleared box asks at once (as when another folder is chosen): the old words are not searched there.
+      const asked = q.trim() === '' ? '' : settled;
+      const [dir, setDir] = useState('');
       const [found, setFound] = useState(null);
+      const [pickError, setPickError] = useState('');
       useEffect(() => {
         let live = true;
         const settle = (r) => {
           if (live) setFound(r && r.ok && Array.isArray(r.files) ? r : { ok: false, reason: str(r?.reason) });
         };
-        Promise.resolve(getJson(`files?${scope}&q=${encodeURIComponent(asked)}`)).then(settle, () => settle(null));
+        Promise.resolve(getJson(`files?${scope}&q=${encodeURIComponent(asked)}${dir ? `&dir=${encodeURIComponent(dir)}` : ''}`)).then(settle, () => settle(null));
         return () => {
           live = false;
         };
-      }, [scope, asked]);
+      }, [scope, asked, dir]);
       const close = () => att.setPicking(false);
       const full = att.files.length >= MAX_ATTACH;
+      // A file of the conversation's folder is referenced by its path there, one elsewhere by its full path.
+      const refOf = (path) => (found?.elsewhere ? `${str(found.root).replace(/[\\/]+$/, '')}/${path}` : path);
+      const canPick = typeof env?.pickDirectory === 'function' && env.canPickDirectory?.() !== false;
+      const pickDir = () => {
+        setPickError('');
+        Promise.resolve()
+          .then(() => env.pickDirectory())
+          .then(
+            (picked) => {
+              if (typeof picked !== 'string' || picked === '') return;
+              setQ('');
+              setDir(picked);
+            },
+            () => setPickError(t('pickFailed')),
+          );
+      };
       return h(
         'div',
         { className: 'dshb-filepick', 'data-dsh-bots-file-picker': attr },
@@ -5024,7 +5047,16 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           }),
           h('button', { type: 'button', className: 'dshb-fileref-x', title: t('close'), 'aria-label': t('close'), 'data-dsh-bots-file-picker-close': attr, onClick: close }, Icon.close(12)),
         ),
-        found?.ok && found.root ? h('div', { 'data-dsh-bots-file-root': found.root, title: found.root, style: { fontSize: TINY, color: C.faint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, t('filePickerIn', { dir: found.root })) : null,
+        found?.ok && found.root
+          ? h(
+              'div',
+              { style: { display: 'flex', alignItems: 'baseline', gap: 10, fontSize: TINY, color: C.faint, minWidth: 0 } },
+              h('span', { 'data-dsh-bots-file-root': found.root, 'data-elsewhere': found.elsewhere || undefined, title: found.root, style: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, t('filePickerIn', { dir: found.root })),
+              dir ? h('button', { type: 'button', className: 'dshb-link', 'data-dsh-bots-file-dir-reset': attr, onClick: () => setDir(''), style: { flex: 'none', fontSize: TINY } }, t('filePickerHome')) : null,
+              canPick ? h('button', { type: 'button', className: 'dshb-link', 'data-dsh-bots-file-dir': attr, onClick: pickDir, style: { flex: 'none', fontSize: TINY } }, t('filePickerFolder')) : null,
+            )
+          : null,
+        pickError ? h('div', { style: { fontSize: TINY, color: C.error, padding: '0 6px' } }, pickError) : null,
         found === null
           ? h('div', { style: { fontSize: TINY, color: C.faint, padding: '2px 6px' } }, t('loading'))
           : !found.ok
@@ -5035,10 +5067,11 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
                   { className: 'dshb-filepick-list' },
                   found.files.map((path) => {
                     const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-                    const picked = att.files.includes(path);
+                    const ref = refOf(path);
+                    const picked = att.files.includes(ref);
                     return h(
                       'button',
-                      { key: path, type: 'button', className: 'dshb-filepick-row', title: path, disabled: picked || full, 'data-dsh-bots-file-option': path, 'data-picked': picked || undefined, onClick: () => att.addFile(path) },
+                      { key: path, type: 'button', className: 'dshb-filepick-row', title: ref, disabled: picked || full, 'data-dsh-bots-file-option': path, 'data-picked': picked || undefined, onClick: () => att.addFile(ref) },
                       h('span', { style: { flex: 'none', display: 'inline-flex', alignSelf: 'center', color: picked ? C.label : C.muted } }, picked ? Icon.check(12) : Icon.file(12)),
                       h('span', { style: { flex: 'none', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 } }, baseName(path)),
                       dir ? h('span', { style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.faint } }, dir) : null,
@@ -9711,15 +9744,17 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         imageFailed: 'The image could not be stored',
         imageRefused: 'Not sent',
         imagesMax: 'A message takes at most {n} images',
-        attachFile: 'Reference a file of the workspace',
+        attachFile: 'Reference a file',
         removeFile: 'Remove this file',
         filesMax: 'A message references at most {n} files',
-        filePickerSearch: 'Search the workspace by file name or path',
+        filePickerSearch: 'Search by file name, or paste a full path',
+        filePickerFolder: 'Another folder…',
+        filePickerHome: 'Back to this conversation’s folder',
         filePickerIn: 'Files in {dir}',
         filePickerEmpty: 'No file matches',
         filePickerMore: 'More files match: type more of the name',
         filePickerFailed: 'The files could not be listed',
-        dropNotImage: 'Only images can be dropped here. To point the bot at a file, use "Reference a file of the workspace".',
+        dropNotImage: 'Only images can be dropped here. To point the bot at a file, use "Reference a file".',
         openImage: 'Open the image',
         openImageNew: 'Open in a new window',
         prevImage: 'Previous image',
@@ -10824,15 +10859,17 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         imageFailed: '图片没能保存',
         imageRefused: '无法发送',
         imagesMax: '一条消息最多带 {n} 张图片',
-        attachFile: '引用工作区里的文件',
+        attachFile: '引用文件',
         removeFile: '移除这个文件',
         filesMax: '一条消息最多引用 {n} 个文件',
-        filePickerSearch: '按文件名或路径搜索工作区',
+        filePickerSearch: '按文件名搜索，或粘贴完整路径',
+        filePickerFolder: '换个文件夹…',
+        filePickerHome: '回到这个会话的文件夹',
         filePickerIn: '{dir} 里的文件',
         filePickerEmpty: '没有匹配的文件',
         filePickerMore: '还有更多匹配的文件，多输入几个字缩小范围',
         filePickerFailed: '读取文件列表失败',
-        dropNotImage: '这里只能拖入图片。想让 bot 看某个文件，请点「引用工作区里的文件」。',
+        dropNotImage: '这里只能拖入图片。想让 bot 看某个文件，请点「引用文件」。',
         openImage: '查看大图',
         openImageNew: '在新窗口打开',
         prevImage: '上一张',

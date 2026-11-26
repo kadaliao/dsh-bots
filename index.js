@@ -60,7 +60,7 @@ import { isLiveSubscriber, isPanelThread, isTopicThread, panelThreadKey, panelTo
 import { cleanDay, createMemory, dreamBotPrompt, dreamTeamPrompt, isProjectScope, KINDS as MEMORY_KINDS, languageOf, looksSecret, parseJsonReply, reflectionPrompt, searchTickets } from './lib/memory.mjs';
 import { createTopics, rotationReason } from './lib/topics.mjs';
 import { createImages, IMAGE_TYPES, idList, imageId, imageNoteText, imageView, MAX_MESSAGE_IMAGES, refsInContent } from './lib/images.mjs';
-import { fileNoteText, fileRefs, listFiles, resolveFiles } from './lib/files.mjs';
+import { fileNoteText, fileRefs, pickerFiles, resolveFiles } from './lib/files.mjs';
 import { chatMessageRef, createDiscussions, forkPoint, messageRef, seqByTime } from './lib/discussions.mjs';
 import { API_KINDS, CODEX_ROUTE, PI_SCOPE, ROUTE_PREFIX, codexAuthFile, createCodexSync, detectLogins, discoverModels, endpointView, keyRefFor, profileFor, readCodexAuth, codexCredential } from './lib/models.mjs';
 
@@ -1649,7 +1649,7 @@ export function apply(ctx, config, deps = {}) {
   const imageIdsOf = (refs) => (refs?.length ? { images: refs.map((r) => r.attachmentId) } : {});
   /** The images of a logged message or a task, as the panel shows them (those whose reference is still known). */
   const imageViews = (ids) => idList(ids).map((id) => images.get(id)).filter(Boolean).map((ref) => imageView(ref, R));
-  // --- workspace files a message references ------------------------------------------------------
+  // --- files a message references ----------------------------------------------------------------
   /** A message's file references as a content block: one line that names them by their full paths. */
   const fileBlocks = (files) => (files?.length ? [{ type: 'text', text: fileNoteText(files) }] : []);
   /** What a logged message keeps of the files it references (`{path, name}` each). */
@@ -3599,7 +3599,7 @@ export function apply(ctx, config, deps = {}) {
           const panelId = kind === 'user' ? /^bots:panel:(p[a-z0-9]{8})$/.exec(id)?.[1] : undefined;
           const typed = panelId ? store.message(panelId) : undefined;
           if (typed) said = typedText = typed.text;
-          // The workspace files it references: the work this turn hands out carries them, as it does the images.
+          // The files it references: the work this turn hands out carries them, as it does the images.
           if (typed?.files?.length) st.files = fileRefs([...(st.files ?? []), ...typed.files]);
           // Where it sits in the conversation, so a reply to it can fork there (Bots 0.10); again at the turn's end.
           const home = bot.sessionId === session.id;
@@ -4643,7 +4643,7 @@ export function apply(ctx, config, deps = {}) {
         '- In a task conversation, to report to whoever asked: leave out `to`, give `text` and a `status` (progress, done, blocked, question).',
         '- The dispatcher names the person\'s request a task serves with `need`: a short restatement for a new request, or the id of a need already open; and, for a new request that belongs to one of the projects, that project with `project`.',
         '- Images: a new task or message carries the images that came with this turn (or with the task this conversation works on) by itself. To send other images you were sent, or only some, name their ids in `images`; `images: []` sends none.',
-        '- Files: the workspace files the person referenced in this turn (or that came with the task this conversation works on) go along with a new task or message by themselves, as full paths.',
+        '- Files: the files the person referenced in this turn (or that came with the task this conversation works on) go along with a new task or message by themselves, as full paths.',
       ].join('\n'),
       parameters: {
         to: { type: 'string', description: '@handle (or id / name) of the bot. Leave it out to report on your own task.' },
@@ -4694,7 +4694,7 @@ export function apply(ctx, config, deps = {}) {
         // The images it carries (Bots 0.17): those named, else the ones that came with this turn (or with this task).
         const namedImages = args.images !== undefined && args.images !== null;
         const ownImages = namedImages ? imageRefs(args.images) : idList(mine ? mine.images : turnState.get(sessionId)?.images).map((id) => images.get(id)).filter(Boolean);
-        // The workspace files the person referenced go along the same way: this turn's, or this task's.
+        // The files the person referenced go along the same way: this turn's, or this task's.
         const ownFiles = fileRefs(mine ? mine.files : turnState.get(sessionId)?.files);
         const carries = (refs, files = []) => {
           const parts = [refs.length ? (refs.length === 1 ? 'an image' : `${refs.length} images`) : '', files.length ? (files.length === 1 ? 'a file reference' : `${files.length} file references`) : ''].filter(Boolean);
@@ -6267,15 +6267,15 @@ export function apply(ctx, config, deps = {}) {
         return { ok: true, sessionId: sent.sessionId, ...(sent.message ? { message: sent.message } : {}) };
       },
     },
-    // The files of the folder a bot's conversation (`bot`) or a task (`ticket`) works in, for the composer's
-    // picker: a message references them by the paths listed here.
+    // The files the composer's picker offers: those of the folder a bot's conversation (`bot`) or a task
+    // (`ticket`) works in, of another folder the person chose (`dir`), or of the folder a typed full path
+    // names. A bot is not tied to a folder: a message references any file, one elsewhere by its full path.
     files: {
       get: (url) => {
         const t = url.searchParams.get('ticket') ? tickets.get(url.searchParams.get('ticket')) : undefined;
         const bot = t ? undefined : store.get(url.searchParams.get('bot') ?? '');
         if (!t && !bot) return { ok: false, reason: 'no such bot or task' };
-        const root = t ? ticketFolder(t) : botFolder(bot);
-        return { ok: true, root, ...listFiles(root, url.searchParams.get('q') ?? '') };
+        return { ok: true, ...pickerFiles(t ? ticketFolder(t) : botFolder(bot), { q: url.searchParams.get('q') ?? '', dir: url.searchParams.get('dir') ?? '' }) };
       },
     },
     // An image the person attached in the panel (Bots 0.17), stored before the message that carries it is sent.

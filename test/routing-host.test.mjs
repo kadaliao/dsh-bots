@@ -2156,13 +2156,18 @@ function filesBoot(t) {
   return { ...env, root, dirs, textIn, listed };
 }
 
-test('files: the picker lists the folder a conversation works in; a message references its files by their full paths, and may be references alone', async (t) => {
-  const { api, h, atlas, dirs, textIn, listed } = filesBoot(t);
+test('files: the picker starts in the folder a conversation works in and looks anywhere; a message references any file by its full path, and may be references alone', async (t) => {
+  const { api, h, atlas, root, dirs, textIn, listed } = filesBoot(t);
   const forge = api.store.find('forge');
   // Each conversation has its own folder: the dispatcher the shared one, Forge its own.
-  assert.deepEqual(listed(`bot=${atlas.id}`), { ok: true, root: dirs.shared, files: ['notes.txt', 'docs/plan.md'], truncated: false });
+  assert.deepEqual(listed(`bot=${atlas.id}`), { ok: true, root: dirs.shared, files: ['notes.txt', 'docs/plan.md'], truncated: false, elsewhere: false });
   assert.deepEqual(listed(`bot=${atlas.id}&q=plan`).files, ['docs/plan.md']);
   assert.equal(listed(`bot=${forge.id}`).root, dirs.forge);
+  // A bot is not tied to that folder: another one the person chose, or the one a typed full path names.
+  assert.deepEqual(listed(`bot=${atlas.id}&dir=${encodeURIComponent(dirs.forge)}`), { ok: true, root: dirs.forge, files: ['docs/plan.md'], truncated: false, elsewhere: true });
+  assert.deepEqual(listed(`bot=${atlas.id}&q=${encodeURIComponent(join(dirs.scout, 'docs', 'pl'))}`), { ok: true, root: join(dirs.scout, 'docs'), files: ['plan.md'], truncated: false, elsewhere: true });
+  assert.deepEqual(listed(`bot=${atlas.id}&q=${encodeURIComponent(join(root, 'secret.txt'))}`), { ok: true, root, files: ['secret.txt'], truncated: false, elsewhere: true });
+  assert.equal(listed(`bot=${atlas.id}&dir=${encodeURIComponent(dirs.shared)}`).elsewhere, false, 'its own folder, chosen');
   assert.deepEqual(listed('bot=nobody'), { ok: false, reason: 'no such bot or task' });
 
   const plan = { path: join(dirs.shared, 'docs', 'plan.md'), name: 'docs/plan.md' };
@@ -2181,16 +2186,23 @@ test('files: the picker lists the folder a conversation works in; a message refe
   assert.match(textIn(h.agentsById.get(alone.sessionId).deliveries.at(-1).message), /\[2 files referenced: /);
   await assert.rejects(api.routes.send.post({ to: atlas.id, text: ' ', files: [] }), /must not be empty/);
 
-  // Only files of the workspace: nothing outside it, no link out of it, no folder; and nothing is sent then.
+  // Any file of this computer: one elsewhere by its full path (a teammate's folder, a folder of nobody), named
+  // by that path; one of the conversation's folder keeps its path there, however it was named.
+  const secret = { path: join(root, 'secret.txt'), name: join(root, 'secret.txt') };
+  const theirs = { path: join(dirs.forge, 'docs', 'plan.md'), name: join(dirs.forge, 'docs', 'plan.md') };
+  const far = await api.routes.send.post({ to: atlas.id, text: 'Compare these.', files: [secret.path, theirs.path, plan.path, 'link.txt'] });
+  assert.deepEqual(far.message.files, [secret, theirs, plan], 'a link is the file it leads to, once');
+  assert.ok(textIn(h.agentsById.get(far.sessionId).deliveries.at(-1).message).includes(`[3 files referenced: ${secret.path}, ${theirs.path}, ${plan.path}.`));
+  assert.deepEqual((await api.routes.send.post({ to: atlas.id, text: 'x', files: ['../engineering/docs/plan.md'] })).message.files, [theirs], 'a path from the conversation\'s folder may leave it');
+
+  // Refused, and nothing is sent then: a folder, a file that is not there.
   const before = api.store.messages({ bot: atlas.id }).length;
-  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['../secret.txt'] }), /outside the workspace/);
-  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: [join(dirs.shared, '..', 'secret.txt')] }), /not a path in the workspace/);
-  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['link.txt'] }), /outside the workspace/);
   await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['docs'] }), /is not a file/);
-  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['../engineering/docs/plan.md'] }), /outside the workspace/, 'a teammate\'s folder is another workspace');
+  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: [dirs.forge] }), /is not a file/);
+  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: [join(root, 'nowhere', 'a.md')] }), /moved or deleted/);
   // A file moved after it was picked: the message is refused, saying so.
   renameSync(join(dirs.shared, 'notes.txt'), join(dirs.shared, 'notes-old.txt'));
-  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['notes.txt'] }), /no file notes\.txt in the workspace: it was moved or deleted/);
+  await assert.rejects(api.routes.send.post({ to: atlas.id, text: 'x', files: ['notes.txt'] }), /no file notes\.txt: it was moved or deleted/);
   assert.equal(api.store.messages({ bot: atlas.id }).length, before);
 });
 
@@ -2230,7 +2242,9 @@ test('files: work handed to a teammate in another folder carries the references 
   await api.request('POST', `/__dsh_bots/tickets/${task.id}/message`, { text: '', files: ['docs/plan.md'] });
   const last = textIn(h.agentsById.get(task.sessionId).deliveries.at(-1).message);
   assert.ok(last.includes(`[File referenced: ${own.path}.`));
-  await assert.rejects(api.request('POST', `/__dsh_bots/tickets/${task.id}/message`, { text: 'x', files: ['../shared/docs/plan-final.md'] }), /outside the workspace/);
+  await assert.rejects(api.request('POST', `/__dsh_bots/tickets/${task.id}/message`, { text: 'x', files: ['../shared/docs/plan.md'] }), /no file \.\.\/shared\/docs\/plan\.md: it was moved or deleted/);
+  // The task's picker looks in other folders too.
+  assert.deepEqual(listed(`ticket=${task.id}&dir=${encodeURIComponent(dirs.shared)}&q=final`), { ok: true, root: dirs.shared, files: ['docs/plan-final.md'], truncated: false, elsewhere: true });
   // A message the dispatcher adds to the task carries the references of its turn the task does not have yet.
   const more = await api.routes.send.post({ to: atlas.id, text: 'Use the final plan.', files: ['docs/plan-final.md'] });
   const [added] = await h.step(more.sessionId, { calls: [{ name: 'bot_send_message', args: { ticket: task.id, text: 'The plan moved: use the final one.' } }] });

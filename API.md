@@ -26,7 +26,7 @@ tools do, and what the plugin stores. It describes the current version; what cha
 - [Schedules](#schedules)
 - [Settings](#settings)
 - [Images](#images)
-- [Workspace files](#workspace-files)
+- [File references](#file-references)
 - [Chat channels](#chat-channels)
 - [GitHub Issues](#github-issues)
 - [Storage](#storage)
@@ -427,7 +427,7 @@ replied message, so it sees that message and what came before, and nothing the m
 
 | Method | Path | Body / query | Answer |
 |---|---|---|---|
-| POST | `send` | `{ to, text, replyTo?, images?, files? }` | `{ ok, sessionId, message }`: `message` is the logged message (`topic`: the root id when it went into a thread; `pending`); none for `/new` alone. `replyTo`: a main-chat message opens (or joins) its thread; a message in a thread keeps it in that thread, quoted. Refused: `/new` in a thread (`a thread has no new topic: send /new in the main chat`), a message of another bot's chat (`that message is not in this chat`). With `images` or `files` ([Workspace files](#workspace-files)), `text` may be empty |
+| POST | `send` | `{ to, text, replyTo?, images?, files? }` | `{ ok, sessionId, message }`: `message` is the logged message (`topic`: the root id when it went into a thread; `pending`); none for `/new` alone. `replyTo`: a main-chat message opens (or joins) its thread; a message in a thread keeps it in that thread, quoted. Refused: `/new` in a thread (`a thread has no new topic: send /new in the main chat`), a message of another bot's chat (`that message is not in this chat`). With `images` or `files` ([File references](#file-references)), `text` may be empty |
 | GET | `messages` | `?bot=<id>&limit=200` | `{ items: Message[], threads: { [rootId]: ThreadSummary } }`: the chat as it was said, oldest first (messages whose `chat` is the bot, and those without `chat` from or to it), the messages of threads among the rest with their `quote` (the window as it is: a root older than it is not brought along); `threads` for each item that has a thread |
 | GET | `messages` | `?bot=<id>&topic=<rootId>&limit=500` | `{ items: [root, ...replies], threads }` for one thread |
 | GET | `messages` | `?limit=200` | every message, oldest first |
@@ -527,7 +527,7 @@ Message = {
   error?: string,                   // a failed turn's notice
   need?: string,                    // the request (card) it started or belongs to
   images?: string[],                // image ids (Image[] in `GET messages`)
-  files?: FileRef[],                // the workspace files it references
+  files?: FileRef[],                // the files it references
   sid?: string,                     // the Session it was said in
   movedTo?: string, failed?: true, hidden?: true,
   // in `GET messages` only:
@@ -683,7 +683,7 @@ Ticket = {
   relay?: true,                        // opened with report_to: 'me'
   projectId?: string, board?: true,    // a project's task; handed out by the person from the board
   images?: string[],                   // what its assignment carries, ≤ 10
-  files?: FileRef[],                   // the workspace files its assignment references, ≤ 10
+  files?: FileRef[],                   // the files its assignment references, ≤ 10
   reports: { at, status: 'progress' | 'done' | 'blocked' | 'question', text }[],  // newest 200, each ≤ 20 000 characters
   createdAt, updatedAt, startedAt?,
   lastEventAt?,                        // latest event in its Session
@@ -701,7 +701,7 @@ Thread = { key, kind, appKey, chatId, rootId?, label?, tickets: string[] /* subs
 A task's first message (`assignmentText` in `lib/cards.mjs`): `New task t… from <who>: <title>`, where it started,
 the card it serves, up to 1500 characters of the assignment, `--- Where it came from ---` with the chat message and
 context (≤ 4000 characters; `said` left out when the assignment repeats it), its images, and how to report; the files
-it references follow in a block of their own ([Workspace files](#workspace-files)). A project's
+it references follow in a block of their own ([File references](#file-references)). A project's
 task's persona adds `## The project`.
 
 ### Stages and slots
@@ -1036,7 +1036,7 @@ handle, avatar, role }`).
 - `images: string[]`: left out, a new task or a message carries the turn's images (a home's) or the task's (from a task
   conversation); `[]` carries none. Adding to a task carries only images it does not have; from a task's own
   conversation, only the ones named. Reports carry none. The answer says `It carries N images.`
-- File references ([Workspace files](#workspace-files)) take no argument: a new task or a message carries the turn's
+- File references ([File references](#file-references)) take no argument: a new task or a message carries the turn's
   (a home's) or the task's (from a task conversation); adding to a task from a home carries the turn's it does not
   have. Reports carry none. The answer says `It carries a file reference.` (`… an image and 2 file references.`).
 - Refused: the dispatcher handing work to itself (`you are the dispatcher: hand the work to a teammate, …`), a task for
@@ -1246,27 +1246,35 @@ Image = { id: string /* the attachment id */, url: '/__dsh_bots/image/<id>', wid
   (`data-dsh-bots-attached-item`: `uploading` | `ready` | `error`). Messages show thumbnails (`data-dsh-bots-msg-image`)
   that open a lightbox (`data-dsh-bots-lightbox`; arrows, Esc).
 
-## Workspace files
+## File references
 
-A person's message may reference files of the folder its conversation works in. Nothing of a file is read, copied or
-uploaded by Bots: the bot gets the file's full path and reads it with its own tools.
+A person's message may reference files of this computer. A bot is not tied to one folder, so any file may be
+referenced: one of the folder the conversation works in by its path there, any other by its full path. Nothing of a
+file is read, copied or uploaded by Bots: the bot gets the file's full path and reads it with its own tools and
+permissions.
 
 ```ts
-FileRef = { path: string /* the real, absolute path */, name: string /* its path inside the workspace, with `/` */ }
+FileRef = { path: string /* the real, absolute path */, name: string /* for show: its path inside the conversation's folder (with `/`) when it is there, else its full path */ }
 ```
 
 | Method | Path | Query | Answer |
 |---|---|---|---|
-| GET | `files` | `?bot=<id>&q=<words>` or `?ticket=<id>&q=<words>` | `{ ok, root, files: string[], truncated }`: the files of the workspace whose path has every word of `q` (any case), as paths inside it, at most 50, the closest first (the name itself matches, then the one nearer the top). Entries with a leading dot, `node_modules` and symbolic links are not listed; a search stops after 20 000 entries or 12 levels (`truncated`, also when more than 50 match). `{ ok: false, reason: 'no such bot or task' }` |
+| GET | `files` | `?bot=<id>&q=<words>&dir=<folder>?` or `?ticket=<id>&q=<words>&dir=<folder>?` | `{ ok, root, files: string[], truncated, elsewhere }`: the files of the folder `root` whose path has every word of `q` (any case), as paths inside it, at most 50, the closest first (the name itself matches, then the one nearer the top). Entries with a leading dot, `node_modules` and symbolic links are not listed; a search stops after 20 000 entries or 12 levels (`truncated`, also when more than 50 match). `elsewhere`: `root` is not the conversation's folder, so a file listed is referenced by its full path (`root` + `/` + the path listed). `{ ok: false, reason: 'no such bot or task' }` |
 
-- The workspace (`root`) is where the conversation works: for `bot`, the bot's configured folder (`workdirs`), else the
-  shared Bots workspace; for `ticket`, its project's folder, else its bot's (as its Session is placed).
-- `send` and `tickets/<id>/message` take `files: string[]`: paths inside that workspace, as `GET files` lists them, at
-  most 10 (`a message carries at most 10 file references`). `send` resolves them in the bot's workspace (a reply in a
-  thread too), `tickets/<id>/message` in the task's. The Host resolves each to its real path (`lib/files.mjs`) and
-  refuses the message, before anything is logged or sent, for an absolute path (`… is not a path in the workspace`), a
-  path that leaves the workspace through `..` or a symbolic link (`… is outside the workspace`), a file that is not
-  there (`no file … in the workspace: it was moved or deleted`) and anything that is not a file (`… is not a file`).
+- `root` is the conversation's folder: for `bot`, the bot's configured folder (`workdirs`), else the shared Bots
+  workspace; for `ticket`, its project's folder, else its bot's (as its Session is placed). With `dir` (a full path,
+  `~` is the home folder) it is that folder. When `q` is a full path (`/…`, `~/…`) it is the folder that path names,
+  whatever `dir` says: the longest part of the path that is a folder, searched by the words that follow it
+  (`~/docs/plan` lists the files of `~/docs` with `plan` in their path); a `q` that is the full path of a file
+  answers with that one file, a hidden one too.
+- `send` and `tickets/<id>/message` take `files: string[]`, at most 10 (`a message carries at most 10 file
+  references`): each a path inside the conversation's folder (as `GET files` lists them; `send` takes the bot's
+  folder, a reply in a thread too, `tickets/<id>/message` the task's) or the full path of a file anywhere on this
+  computer (`~` is the home folder). The Host resolves each to its real path (`lib/files.mjs`: a symbolic link is the
+  file it leads to, and a file named twice is referenced once) and refuses the message, before anything is logged or
+  sent, for a file that is not there (`no file …: it was moved or deleted`) and anything that is not a file (`… is
+  not a file`). No folder bounds what may be referenced: the bot that gets the path reads it with the file tools and
+  permissions it has.
 - To a bot, the references are one text block after the message's words (before its images): `[File referenced:
   <path>. The person points you to this file on this computer: read it at this full path (your working folder may be
   another one). A task or message you send a teammate from here carries the reference by itself.]` (`N files
@@ -1277,7 +1285,10 @@ FileRef = { path: string /* the real, absolute path */, name: string /* its path
   recovery) has their block. A message added before a ticket starts adds its references to the ticket. Since a
   reference is a full path, a teammate working in another folder reads the same file, with the file tools it has.
 - Panel: a file button (`data-dsh-bots-file-button`) in the chat, thread and task composers opens the picker
-  (`data-dsh-bots-file-picker`: a search box `data-dsh-bots-file-search`, rows `data-dsh-bots-file-option`); picked
+  (`data-dsh-bots-file-picker`: a search box `data-dsh-bots-file-search`, which also takes a pasted full path; the
+  folder searched `data-dsh-bots-file-root`, with `data-elsewhere` when it is not the conversation's; rows
+  `data-dsh-bots-file-option`). **Another folder…** (`data-dsh-bots-file-dir`, when the Host has a folder dialog)
+  searches a folder the person chooses, and `data-dsh-bots-file-dir-reset` goes back to the conversation's. Picked
   files show above the box (`data-dsh-bots-file-ref`, removed with `data-dsh-bots-file-ref-remove`). Messages and a
   task's assignment show a chip per file (`data-dsh-bots-msg-file`, the full path as its tooltip). A file that is no
   image dropped on a composer is not taken (a page is not told where a dropped file is); the panel says to use the

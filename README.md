@@ -113,14 +113,17 @@ bot answers in that message's **thread**.
   to ten a message; images alone are a message too). The bot sees them, when its model reads images, and the chat
   shows them; click one to see it large. Work handed on takes them along: a task the dispatcher opens from your
   message carries its images, and so do a lead's sub-tasks. The thread box and a task's message box take images too.
-- **Point at files of the workspace.** Click the file button beside the image button and search the folder the
-  conversation works in by file name or path (hidden files, `node_modules` and links are not listed); pick up to ten
-  files, which show above the box until you send (**×** removes one). The bot gets each file's full path and reads it
-  with its own file tools, so nothing is uploaded or copied. Work handed on keeps the reference: a teammate working in
-  another folder is pointed at the same file, not at a file of the same name in its own folder. Only files inside
-  that folder can be referenced; one that was moved or deleted before you send is refused, saying so. On a task's
-  page the folder is the task's (its project's folder, when it has one). Files cannot be dropped in: a browser does
-  not tell the page where a dropped file is, so only images are taken that way.
+- **Point at any file of your computer.** Click the file button beside the image button and search by file name or
+  path (hidden files, `node_modules` and links are not listed); pick up to ten files, which show above the box until
+  you send (**×** removes one). The search starts in the folder the conversation works in (on a task's page the
+  task's: its project's folder, when it has one), and a bot is not tied to that folder: paste or type a full path
+  (`/…` or `~/…`) to look in the folder it names (`~/docs/plan` lists the files of `~/docs` with `plan` in their
+  path; the full path of a file gives that file, a hidden one too), or click **Another folder…** to choose a folder in
+  Harness's folder dialog and search there. The bot gets each file's full path and reads it with its own file tools
+  and permissions, so nothing is uploaded or copied. Work handed on keeps the reference: a teammate working in another
+  folder is pointed at the same file, not at a file of the same name in its own folder. A file that was moved or
+  deleted before you send is refused, saying so. Files cannot be dropped in: a browser does not tell the page where a
+  dropped file is, so only images are taken that way.
 - **Reply to any message.** Hover over a message and click **Reply**: it is quoted above the box (**×** or Esc drops
   it), and what you send answers it. The bot answers in a conversation of its own, **forked from its conversation at
   that message**: it sees that message and everything before it, and nothing the main chat said after it. So when

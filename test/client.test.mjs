@@ -588,7 +588,7 @@ test('images (0.17): one attached is stored at once and the message names it; a 
   }
 });
 
-test('files: one of the workspace is picked in the composer, shown before sending and removable, and the message references it; images still drop in', async () => {
+test('files: one of the conversation\'s folder is picked in the composer, shown before sending and removable, and the message references it; images still drop in', async () => {
   const { exports, hooks } = await loadClient();
   const { ctx, seen } = fakeContext();
   exports.apply(ctx);
@@ -635,7 +635,7 @@ test('files: one of the workspace is picked in the composer, shown before sendin
     assert.equal(shown.props.title, '/Users/me/bots/workspace/docs/spec.md');
     assert.deepEqual(collect(shown), ['spec.md']);
 
-    // The button opens the picker, which lists the files of the bot's workspace.
+    // The button opens the picker, which starts in the folder the bot's conversation works in.
     assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-picker']).length, 0);
     findAll(tree, (n) => n.props['data-dsh-bots-file-button'] === 'chat')[0].props.onClick();
     tree = await again();
@@ -667,7 +667,7 @@ test('files: one of the workspace is picked in the composer, shown before sendin
     hooks.rewind();
     tree = panel({});
 
-    // References alone are a message: it names the file by its path in the workspace.
+    // References alone are a message: it names the file by its path in the conversation's folder.
     const [sendBtn] = findAll(tree, (n) => n.props['data-dsh-bots-send']);
     assert.equal(sendBtn.props.disabled, false);
     sendBtn.props.onClick();
@@ -689,12 +689,125 @@ test('files: one of the workspace is picked in the composer, shown before sendin
     hooks.rewind();
     tree = panel({});
     assert.equal(posts.filter((p) => p.path.endsWith('/images')).length, 1, 'not uploaded');
-    assert.match(collect(tree).join('\n'), /Only images can be dropped here\. To point the bot at a file, use "Reference a file of the workspace"\./);
+    assert.match(collect(tree).join('\n'), /Only images can be dropped here\. To point the bot at a file, use "Reference a file"\./);
     hooks.runCleanups();
   } finally {
     MESSAGES.pop();
     globalThis.FileReader = saved.FileReader;
     URL.createObjectURL = saved.createObjectURL;
+    globalThis.fetch = base;
+  }
+});
+
+test('files: a bot is not tied to its folder: a pasted full path or another folder is searched, and those files are referenced by their full paths', async () => {
+  const { exports, hooks } = await loadClient();
+  const { ctx, seen } = fakeContext();
+  exports.apply(ctx);
+  const posts = mockFetch();
+  const base = globalThis.fetch;
+  const asked = [];
+  // The Host answers for the conversation's folder, for a typed full path and for a chosen folder.
+  globalThis.fetch = async (url, init) => {
+    const path = String(url);
+    if (!path.startsWith('/__dsh_bots/files?')) return base(url, init);
+    asked.push(path);
+    const params = new URL(path, 'http://x').searchParams;
+    const answer = params.get('q').startsWith('/')
+      ? { root: '/Users/me/notes/', files: ['todo.md'], elsewhere: true }
+      : params.get('dir')
+        ? { root: params.get('dir'), files: ['docs/spec.md', 'README.md'], elsewhere: true }
+        : { root: '/Users/me/bots/workspace', files: ['README.md'], elsewhere: false };
+    return { ok: true, json: async () => ({ ok: true, truncated: false, ...answer }) };
+  };
+  let dialog = async () => '/Users/me/code/site';
+  globalThis.__DSH_DIRECTORY_PICKER__ = { pick: () => dialog() };
+  try {
+    const panel = seen.slots.find((s) => s.options.name === 'main').component;
+    const again = async (ms = 0) => {
+      await new Promise((r) => setTimeout(r, ms));
+      await flush();
+      hooks.rewind();
+      panel({});
+      await flush();
+      hooks.rewind();
+      return panel({});
+    };
+    const one = (node, attr, value) => findAll(node, (n) => (value === undefined ? n.props[attr] : n.props[attr] === value))[0];
+    const options = (node) => findAll(node, (n) => n.props['data-dsh-bots-file-option']).map((n) => n.props['data-dsh-bots-file-option']);
+    const chips = (node) => findAll(node, (n) => n.props['data-dsh-bots-file-ref']).map((n) => n.props['data-dsh-bots-file-ref']);
+    let tree = await renderSettled(panel, {}, hooks);
+    one(tree, 'data-dsh-bots-file-button', 'chat').props.onClick();
+    tree = await again();
+    assert.equal(one(tree, 'data-dsh-bots-file-search', 'chat').props.placeholder, 'Search by file name, or paste a full path');
+    assert.equal(one(tree, 'data-dsh-bots-file-root').props['data-elsewhere'], undefined);
+    assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-dir-reset']).length, 0, 'nothing to go back from');
+    one(tree, 'data-dsh-bots-file-option', 'README.md').props.onClick();
+    hooks.rewind();
+    tree = panel({});
+    assert.deepEqual(chips(tree), ['README.md']);
+
+    // A full path pasted in the search box: the Host looks where it leads, and the file is referenced by its full path.
+    one(tree, 'data-dsh-bots-file-search', 'chat').props.onChange({ target: { value: '/Users/me/notes/todo' } });
+    hooks.rewind();
+    panel({});
+    tree = await again(230);
+    assert.equal(asked.at(-1), `/__dsh_bots/files?bot=bot-a&q=${encodeURIComponent('/Users/me/notes/todo')}`);
+    assert.equal(one(tree, 'data-dsh-bots-file-root').props['data-dsh-bots-file-root'], '/Users/me/notes/');
+    assert.equal(one(tree, 'data-dsh-bots-file-root').props['data-elsewhere'], true);
+    assert.equal(one(tree, 'data-dsh-bots-file-option', 'todo.md').props.title, '/Users/me/notes/todo.md');
+    one(tree, 'data-dsh-bots-file-option', 'todo.md').props.onClick();
+    hooks.rewind();
+    tree = panel({});
+    assert.deepEqual(chips(tree), ['README.md', '/Users/me/notes/todo.md']);
+    assert.deepEqual(collect(one(tree, 'data-dsh-bots-file-ref', '/Users/me/notes/todo.md')), ['todo.md'], 'shown by its name, the full path behind it');
+    assert.equal(one(tree, 'data-dsh-bots-file-option', 'todo.md').props.disabled, true, 'picked already');
+
+    // "Another folder" opens the Host's folder dialog; the picker then searches that folder.
+    one(tree, 'data-dsh-bots-file-dir', 'chat').props.onClick();
+    tree = await again(5);
+    assert.equal(asked.at(-1), `/__dsh_bots/files?bot=bot-a&q=&dir=${encodeURIComponent('/Users/me/code/site')}`);
+    assert.equal(one(tree, 'data-dsh-bots-file-search', 'chat').props.value, '', 'the typed path is cleared');
+    assert.deepEqual(options(tree), ['docs/spec.md', 'README.md']);
+    assert.equal(one(tree, 'data-dsh-bots-file-option', 'README.md').props.disabled, false, 'another README than the one picked');
+    one(tree, 'data-dsh-bots-file-option', 'docs/spec.md').props.onClick();
+    hooks.rewind();
+    tree = panel({});
+    assert.deepEqual(chips(tree), ['README.md', '/Users/me/notes/todo.md', '/Users/me/code/site/docs/spec.md']);
+    // A dialog closed without a choice changes nothing; one that fails says so.
+    dialog = async () => null;
+    one(tree, 'data-dsh-bots-file-dir', 'chat').props.onClick();
+    tree = await again(5);
+    assert.equal(one(tree, 'data-dsh-bots-file-root').props['data-dsh-bots-file-root'], '/Users/me/code/site');
+    dialog = async () => {
+      throw new Error('no dialog');
+    };
+    one(tree, 'data-dsh-bots-file-dir', 'chat').props.onClick();
+    tree = await again(5);
+    assert.match(collect(tree).join('\n'), /The folder dialog is unavailable here; type or paste the path instead\./);
+    // Back to the conversation's folder.
+    const calls = asked.length;
+    one(tree, 'data-dsh-bots-file-dir-reset', 'chat').props.onClick();
+    tree = await again(5);
+    assert.equal(asked.length, calls + 1);
+    assert.equal(asked.at(-1), '/__dsh_bots/files?bot=bot-a&q=');
+    assert.equal(one(tree, 'data-dsh-bots-file-root').props['data-dsh-bots-file-root'], '/Users/me/bots/workspace');
+    assert.equal(one(tree, 'data-dsh-bots-file-option', 'README.md').props.disabled, true);
+
+    one(tree, 'data-dsh-bots-send').props.onClick();
+    await flush();
+    assert.deepEqual(posts.find((p) => p.path.endsWith('/send'))?.body, { to: 'bot-a', text: '', files: ['README.md', '/Users/me/notes/todo.md', '/Users/me/code/site/docs/spec.md'] });
+
+    // Without a folder dialog (a Host that has none) the button is not offered: a path can still be pasted.
+    delete globalThis.__DSH_DIRECTORY_PICKER__;
+    hooks.rewind();
+    tree = panel({});
+    one(tree, 'data-dsh-bots-file-button', 'chat').props.onClick();
+    tree = await again();
+    assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-picker']).length, 1);
+    assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-dir']).length, 0);
+    hooks.runCleanups();
+  } finally {
+    delete globalThis.__DSH_DIRECTORY_PICKER__;
     globalThis.fetch = base;
   }
 });
