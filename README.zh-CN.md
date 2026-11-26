@@ -13,7 +13,7 @@ bot 在它的**讨论串**里回答，只看得到这条消息和它之前的内
 - **一人公司（OPC）**：一个人经营业务，需要一整个「员工团队」——研发、增长、客户、财务，再加一个定本周计划的运营负责人，和每天早上给你简报的调度员。
 - **需要分工协作的工作**：开发要有人写、有人测、有人审；内容要有人调研、有人写、有人做图；研究要有人挑刺。
 
-![团队模板](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/teams.png)
+![聊天](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/chat.png)
 
 ## 一键雇用一支团队
 
@@ -59,7 +59,7 @@ bot 调到别的团队或退出团队后就不再是负责人；调度员不属�
   它已有同名任务的不重复添加），还没有调度员时新建一个 Atlas；
 - 最后可以一键把「开场任务」发给调度员，团队就开始干活了。
 
-![聊天](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/chat.png)
+![团队模板](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/teams.png)
 
 ## 一段示例（一人公司）
 
@@ -124,6 +124,8 @@ bot 默认用你说话的语言回答；中文提问就是中文协作。
 **任务**是 bot 的视角：某个 bot 接下的一件活。**需求**是你的视角：你要的一件事。一个需求常常要好几个任务
 （调度员把调研拆给几个队友同时做，再交给一个汇总），也会跨好几条消息（先提，再补充「欧洲那份加上英国」，再问进度）。
 侧栏的 **需求** 是一块看板，每件事一张卡。
+
+![看板](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/board.png)
 
 - **调度员来归纳和转述。** 它分派工作时，用你的语言把这件事写成一句话，说你会得到什么，不说谁去做
   （「Q3 竞品定价对比表（北美 + 欧洲）」，而不是「@scout 去查北美定价」）。同一件事的几个任务归在一起；

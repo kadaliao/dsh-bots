@@ -18,7 +18,7 @@ It is built for two situations:
 - **Work that is naturally split between roles**: code needs a builder, a tester and a reviewer; content
   needs a researcher, a writer and a designer; research needs a skeptic.
 
-![Team templates](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-teams.png)
+![Chat](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-chat.png)
 
 ## Hire a whole team in one click
 
@@ -74,7 +74,7 @@ Hiring:
   it already has by that name is not added twice), and makes a dispatcher, Atlas, when you have none;
 - offers to send the dispatcher a kickoff message, so the team starts working right away.
 
-![Chat](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-chat.png)
+![Team templates](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-teams.png)
 
 ## An example (one-person company)
 
@@ -160,6 +160,8 @@ A **task** is a bot's view: one piece of work it took on. A **request** is yours
 takes several tasks (the dispatcher splits research between teammates, then hands the results to one who writes them
 up), and several messages (you ask, then add "include the UK in the Europe one", then ask how it is going). The
 **Requests** board shows each request as a card.
+
+![The board](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-board.png)
 
 - **The dispatcher restates it.** When it hands out the work, it names the request in one line, in your language,
   saying what you get rather than who does it ("Q3 competitor pricing table (North America + Europe)", not "@scout
