@@ -2,5 +2,14 @@
   "meta": {
     "title": "Bots",
     "description": "Grok-style bots: each with its own avatar, persona, model, skills, apps, scheduled tasks and memory. Bots message each other, a dispatcher hands out the work, and a usage view counts tokens by bot, task and day."
+  },
+  "apps": {
+    "keenable": {
+      "name": "Keenable Search",
+      "description": "Web search and page fetch on its own index (hosted server; works without a key on the shared public tier). Queries are logged with or without a key under the default policy.",
+      "fields": {
+        "KEENABLE_API_KEY": "API key (optional)"
+      }
+    }
   }
 }

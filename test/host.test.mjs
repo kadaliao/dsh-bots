@@ -224,7 +224,7 @@ test('persona text for a lone non-dispatcher', () => {
   assert.match(personaText(bot, [bot]), /only bot/);
 });
 
-test('catalog apps fill keys, paths and headers from values', () => {
+test('catalog apps fill keys, paths and headers from values', async () => {
   assert.ok(templates().length >= 20);
   for (const gone of ['filesystem', 'fetch', 'time']) assert.ok(!templates().some((t) => t.id === gone), `${gone} is a built-in DSH ability`);
   const tav = mcpConfigOf({ template: 'tavily', serverName: 'tavily', values: { TAVILY_API_KEY: 'k' } });
@@ -246,6 +246,14 @@ test('catalog apps fill keys, paths and headers from values', () => {
   const keyless = mcpConfigOf({ template: 'keenable', serverName: 'keenable', values: {} });
   assert.equal(keyless.transport, 'streamable-http');
   assert.deepEqual(keyless.headers, {});
+  const keenEntry = templates().find((t) => t.id === 'keenable');
+  assert.match(keenEntry.description.en, /under the default policy/);
+  assert.match(keenEntry.description.zh, /默认策略下/);
+  const { readFileSync } = await import('node:fs');
+  const enLocale = JSON.parse(readFileSync(new URL('../locale/en.json', import.meta.url), 'utf8'));
+  const zhLocale = JSON.parse(readFileSync(new URL('../locale/zh.json', import.meta.url), 'utf8'));
+  assert.equal(enLocale.apps.keenable.description, keenEntry.description.en);
+  assert.equal(zhLocale.apps.keenable.description, keenEntry.description.zh);
 });
 
 test('initials avatars, including pinyin', async () => {
