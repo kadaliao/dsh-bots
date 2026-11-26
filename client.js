@@ -740,7 +740,7 @@ select.dshb-input{padding-right:6px}
 .dshb-switch{position:relative;flex:none;width:32px;height:18px;border-radius:999px;border:none;padding:0;cursor:pointer;background:${C.border};transition:background .15s}
 .dshb-switch[data-on=true]{background:${C.label}}
 .dshb-switch::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
-.dshb-switch[data-on=true]::after{transform:translateX(14px)}
+.dshb-switch[data-on=true]::after{transform:translateX(14px);background:${C.onLabel}}
 .dshb-switch:disabled{opacity:.5;cursor:default}
 .dshb-menu-item{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border:none;border-radius:7px;background:transparent;color:${C.primary};font:inherit;font-size:${SMALL};text-align:left;cursor:pointer;white-space:nowrap}
 .dshb-menu-item:hover{background:${C.hover}}
@@ -12692,7 +12692,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         muted: 'var(--dsw-alias-label-secondary, #646a73)',
         faint: 'var(--dsw-alias-label-tertiary, #8f959e)',
         brand: 'var(--dsw-alias-brand-primary, #4d6bfe)',
-        onBrand: 'var(--dsw-alias-label-on-brand, #fff)',
+        onBrand: 'var(--dsw-alias-label-primary-foreground, #fff)',
         ok: 'var(--dsw-alias-state-success-primary, #2ea121)',
         error: 'var(--dsw-alias-state-error-primary, #d83931)',
       };
