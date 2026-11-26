@@ -200,6 +200,15 @@ up), and several messages (you ask, then add "include the UK in the Europe one",
   (**Answer** opens its task), what was delivered and the tasks behind it; **Rename** it, edit its description, move it
   to another project (it gets a number there), **Start** it, **Mark done**, or **Drop it** (its unfinished tasks
   stop). A task's page links back to its card, and so does the card's message in the chat.
+- **Find a card**: below the project chips, pick when it was filed (**Today**, **This week** from Monday, **This
+  month**, **Last month**, or **Custom** with a first and a last day, the last one included) and type words to search
+  the cards' numbers, titles and descriptions. The filters work together, with the project too ("last month's cards of
+  `OPC` that mention a quote"), and reach every card, however old. **Clear filters** shows the whole board again; with
+  more cards than one page holds, **Load more** fetches the next ones.
+- **Archive what is finished**: a card that is done or dropped has **Archive** on its page. It leaves the board and
+  stays under **Archived** (the button on top of the board), with its number, tasks and results, where you search it
+  the same way, open it, and **Restore** it. Archived cards are kept for good, while of the other finished cards the
+  newest 500 are. A follow-up on an archived card, or starting it again, puts it back on the board.
 - When you say "forget that one", the dispatcher drops the request; when two turn out to be one, it merges them; when
   it answered a card itself, without a task, it marks it done.
 - Only what you ask for is a request: work teammates ask each other for, and work a schedule starts, is not.

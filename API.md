@@ -863,6 +863,7 @@ Need = {
   links?: { kind: 'github', ref, url? }[],   // ≤ 10
   createdAt, updatedAt,
   closed?: { at, by: 'user' | 'dispatcher', outcome?: 'done' },   // outcome 'done': marked done; else dropped
+  archivedAt?: number,           // the person put it away: off the board, never pruned; none: on the board
   mergedInto?: string,           // merged away: the need that took it
   snapshot?: { status, done, total, failed, stalled, at },   // its last status, for when its tasks are pruned
 }
@@ -873,7 +874,7 @@ NeedRow = {
   bots: string[], via?, who?, threadKey?, asked? /* the first message, ≤ 200 */,
   latest?: { status, at, botId, ticket, preview },   // a question waiting for the person first, else the latest report
   after?: { id, title, status, ref? }[], afterStuck?: true, startWith?,   // a card in To do only
-  createdAt, updatedAt, endedAt?, closed?,
+  createdAt, updatedAt, endedAt?, closed?, archivedAt?,
 }
 NeedView = NeedRow & { asks, description?, tickets: TicketRow[], results: { at, botId, ticket, text }[] /* done reports */ }
 ```
@@ -883,6 +884,12 @@ Status (first match): closed → `done` with `outcome: 'done'`, else `stopped`; 
 `done`; one `failed` → `failed`; else `stopped`. Work handed out (a task counted toward it, a start, or a merge into
 it) takes a card out of To do and makes a closed one live again. `state.needs` counts `waiting` (with `failed`) and
 `working`.
+
+**Archive**: the person may put away a card that is `done` or `stopped` (`archivedAt`). It leaves `GET needs` unless
+asked for (`archived`), keeps its number, tasks, results and the cards that wait for it, and is never pruned. Archiving
+does not touch `updatedAt`. It is back on the board when the person restores it (`updatedAt` is then now), and by
+itself when work is handed out for it again: a task counted toward it, a start, a merge into it, or a follow-up that
+reopens one of its tasks. A start that reaches no one leaves it archived.
 
 **Which need a task counts toward**, when the router home opens or adds to one with `bot_send_message`: the one `need`
 names (an id or a card; an unknown one is refused before anything opens: `no card OPC-99 on the board. …`); the need the task already counts toward (a
@@ -901,7 +908,7 @@ a chat message's source line.
 
 | Method | Path | Body / query | Answer |
 |---|---|---|---|
-| GET | `needs` | `?status=&project=<id>\|none&limit=&offset=` (`limit` ≤ 300, default 100) | `{ items: NeedRow[], next_offset }`, newest change first |
+| GET | `needs` | `?status=&project=<id>\|none&q=&from=&to=&archived=1\|all&limit=&offset=` (`limit` ≤ 300, default 100). `q`: words (≤ 10, any case) that must all be in the card's reference, title or description. `from`, `to`: ms; cards with `from` ≤ `createdAt` < `to`, either may be left out (the panel sends the first day and the day after the last one, at midnight of the person's calendar). `archived`: `1` the archived cards only, `all` those too; left out, only the cards on the board | `{ items: NeedRow[], next_offset }`, newest change first. Every filter applies before the page is cut |
 | GET | `needs/<ref>` | `ref`: an id or a card (`OPC-12`, any case) | `NeedView`; a merged id answers with the need that took it |
 | POST | `needs/create` | `{ title, description?, projectId? (id or key), assignee? (a bot), start? (default true), after?: (id \| ref)[] }` | `{ ok, ...NeedView, startError? }`: a card that could not be handed out is kept, in To do, and `startError` says why. With `after`: kept in To do, waiting, `assignee` as `startWith` |
 | POST | `needs/<ref>/start` | `{ assignee? }` | `{ ok, ...NeedView }`; only a card in `todo` or `stopped` (`this card is under way already: …`); starts a waiting card at once |
@@ -909,6 +916,8 @@ a chat message's source line.
 | POST | `needs/<ref>/rename` | `{ title }` | `{ ok, ...NeedView }` |
 | POST | `needs/<ref>/drop` | `{}` | `{ ok, ...NeedView }`: open tasks stopped by the user |
 | POST | `needs/<ref>/save` | `{ title?, description?, projectId? ('' for none), after?: (id \| ref)[] ([] for none), startWith?: bot ('' for the dispatcher) }` | `{ ok, ...NeedView }`. Another project gives it the next number there, and the tasks it opens from then on work on that project (tasks it has keep theirs). Everything is checked before anything changes |
+| POST | `needs/<ref>/archive` | `{}` | `{ ok, ...NeedView }` with `archivedAt`; only a card that is `done` or `stopped` (`only a card that is done or dropped can be archived: …`). One already archived stays as it is |
+| POST | `needs/<ref>/unarchive` | `{}` | `{ ok, ...NeedView }`: back on the board. One that is not archived stays as it is |
 
 ### Starting a card
 
@@ -1474,7 +1483,7 @@ JSON in its shape is set aside as `<name>.corrupt-<ms>` and starts empty; a `tic
 | `bots.json` | the roster: `{ version, bots: Bot[] }` |
 | `messages.jsonl` | [the timeline](#the-timeline), append-only |
 | `tickets.json` | `{ version: 1, tickets: Ticket[], threads: Thread[] }`: the newest 500 archived tasks are kept; Threads no task is subscribed to are dropped |
-| `needs.json` | `{ version: 1, needs: Need[] }`: the newest 500 settled needs (done, failed or stopped) and every open one |
+| `needs.json` | `{ version: 1, needs: Need[] }`: the newest 500 settled needs (done, failed or stopped), every open one and every archived one |
 | `projects.json` | `{ version: 1, projects: Project[] }`, at most 100 |
 | `discussions.json` | `{ items: { [threadKey]: Discussion }, anchors: { [ref]: { sessionId, seq, at } } /* ref: msg:<id>, chat:<appKey>:<chatId>:<messageId> or a Thread key; newest 4000 */, seen: { [rootId]: number }, told: { [botId]: number } }`; discussions past 2000 lose the oldest archived ones. A new discussion is written at once, the rest within 200 ms |
 | `channels.json` | per channel: pairings, pairing codes, the replay guard's highest message ids, `scheduleReplies`, a connector's cursors (`memo`) |

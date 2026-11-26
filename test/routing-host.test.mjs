@@ -2675,6 +2675,109 @@ test('waiting cards: a card in To do waits for others and starts by itself with 
   env.dispose();
 });
 
+// --- the board's filters and its archive ------------------------------------------------------------
+
+test('board filters: by the day a card was filed, by words in its number, title or description, with the project; a match past the first page is found', async () => {
+  // Days of the local calendar, as the panel sends them.
+  const day = (y, m, d, ...time) => new Date(y, m - 1, d, ...time).getTime();
+  const clock = { t: day(2026, 10, 31) };
+  const env = boot({ now: () => clock.t });
+  const { api } = env;
+  const { project: opc } = await api.request('POST', '/projects/save', { project: { name: 'One-person company', key: 'OPC' } });
+  const file = (at, body) => {
+    clock.t = at;
+    return api.request('POST', '/needs/create', { start: false, ...body });
+  };
+  const ids = async (query) => (await api.request('GET', `/needs?${query}`)).items.map((r) => r.id).sort();
+  const oct = await file(day(2026, 10, 31, 23, 59, 59, 999), { title: 'Quote for the Berlin client', projectId: 'OPC' });
+  const nov1 = await file(day(2026, 11, 1), { title: 'Landing page', description: 'Add the quote form.', projectId: 'OPC' });
+  const nov26 = await file(day(2026, 11, 26, 23, 59, 59, 999), { title: 'Invoice template' });
+  const nov27 = await file(day(2026, 11, 27), { title: 'Quote follow-up' });
+  assert.deepEqual([oct.ref, nov1.ref, nov26.ref], ['OPC-1', 'OPC-2', undefined]);
+  // Last month: from its first day to the first of the next, which is left out (the month's last millisecond is in).
+  assert.deepEqual(await ids(`from=${day(2026, 10, 1)}&to=${day(2026, 11, 1)}`), [oct.id]);
+  assert.deepEqual(await ids(`from=${day(2026, 11, 1)}&to=${day(2026, 12, 1)}`), [nov1.id, nov26.id, nov27.id].sort());
+  // Days picked by hand, 1 to 26 November: the last day counts whole, the next one not at all.
+  assert.deepEqual(await ids(`from=${day(2026, 11, 1)}&to=${day(2026, 11, 27)}`), [nov1.id, nov26.id].sort());
+  // One end left open.
+  assert.deepEqual(await ids(`from=${day(2026, 11, 27)}`), [nov27.id]);
+  assert.deepEqual(await ids(`to=${day(2026, 11, 1)}`), [oct.id]);
+  // Words: in the title or the description, any case; every word must be there; a card's number is one too.
+  assert.deepEqual(await ids('q=QUOTE'), [oct.id, nov1.id, nov27.id].sort());
+  assert.deepEqual(await ids('q=quote%20berlin'), [oct.id]);
+  assert.deepEqual(await ids('q=opc-2'), [nov1.id]);
+  assert.deepEqual(await ids('q=nothing-like-it'), []);
+  // Together: words, the project and the days.
+  assert.deepEqual(await ids(`q=quote&project=${opc.id}`), [oct.id, nov1.id].sort());
+  assert.deepEqual(await ids(`q=quote&project=${opc.id}&from=${day(2026, 11, 1)}&to=${day(2026, 12, 1)}`), [nov1.id]);
+  assert.deepEqual(await ids('q=quote&project=none'), [nov27.id]);
+  assert.deepEqual(await ids('q=quote&status=working'), [], 'and the status, as before');
+  // More cards than a page holds: the old one is past the first page, and a search finds it all the same.
+  for (let i = 0; i < 301; i += 1) await file(day(2026, 11, 28) + i, { title: `Filler ${i}` });
+  const first = await api.request('GET', '/needs?limit=300');
+  assert.deepEqual([first.items.length, first.next_offset], [300, 300]);
+  assert.ok(!first.items.some((r) => r.id === oct.id));
+  const rest = await api.request('GET', '/needs?limit=300&offset=300');
+  assert.deepEqual([rest.items.length, rest.next_offset], [5, null]);
+  assert.ok(rest.items.some((r) => r.id === oct.id));
+  assert.deepEqual(await ids('limit=300&q=berlin'), [oct.id]);
+  const page = await api.request('GET', '/needs?limit=100&q=filler');
+  assert.deepEqual([page.items.length, page.next_offset], [100, 100], 'what matches is paged too');
+  env.dispose();
+});
+
+test('board archive: a card that is done or dropped is put away and restored; Archived is searched like the board; work on a card brings it back', async () => {
+  const env = boardBoot();
+  const { h, api } = env;
+  const card = await api.request('POST', '/needs/create', { title: 'Fix the Safari login', assignee: '@forge' });
+  const t = api.tickets.get(card.tickets[0].id);
+  const later = await api.request('POST', '/needs/create', { title: 'Pricing page', start: false });
+  const board = async (query = '') => (await api.request('GET', `/needs${query}`)).items.map((r) => r.id).sort();
+  // Only what is finished: not a card under way, nor one in To do.
+  await assert.rejects(api.request('POST', `/needs/${card.id}/archive`, {}), /only a card that is done or dropped can be archived/);
+  await assert.rejects(api.request('POST', `/needs/${later.id}/archive`, {}), /only a card that is done or dropped can be archived/);
+  await h.step(t.sessionId, { calls: [{ name: 'bot_send_message', args: { status: 'done', text: 'Fixed for 16 and 17.' } }] });
+  let v = await api.request('POST', `/needs/${card.id}/archive`, {});
+  assert.ok(v.archivedAt > 0);
+  assert.deepEqual([v.status, v.tickets.map((x) => x.id), v.results.length], ['done', [t.id], 1], 'it keeps its tasks and what they delivered');
+  // Off the board; under Archived, where words find it; still opened by its id.
+  assert.deepEqual(await board(), [later.id]);
+  assert.deepEqual(await board('?archived=1'), [card.id]);
+  assert.deepEqual(await board('?archived=1&q=safari'), [card.id]);
+  assert.deepEqual(await board('?archived=1&q=pricing'), []);
+  assert.deepEqual(await board('?q=safari'), []);
+  assert.deepEqual(await board('?archived=all'), [card.id, later.id].sort());
+  assert.equal((await api.request('GET', `/needs/${card.id}`)).title, 'Fix the Safari login');
+  // Restored: on the board again.
+  v = await api.request('POST', `/needs/${card.id}/unarchive`, {});
+  assert.equal(v.archivedAt, undefined);
+  assert.deepEqual(await board(), [card.id, later.id].sort());
+  assert.deepEqual(await board('?archived=1'), []);
+  // Archived again, then the person writes to its task: the task takes it up, and the card is back on the board.
+  await api.request('POST', `/needs/${card.id}/archive`, {});
+  await api.request('POST', `/tickets/${t.id}/message`, { text: 'Safari 15 too, please' });
+  v = await api.request('GET', `/needs/${card.id}`);
+  assert.deepEqual([v.status, v.archivedAt], ['working', undefined]);
+  assert.deepEqual(await board('?archived=1'), []);
+  // A dropped card is archived too. A start that reaches nobody leaves it archived; one that does puts it back.
+  const logo = await api.request('POST', '/needs/create', { title: 'Logo' });
+  const sid = api.store.find('atlas').sessionId;
+  await api.request('POST', `/needs/${logo.id}/drop`, {});
+  await api.request('POST', `/needs/${logo.id}/archive`, {});
+  const router = h.agentsById.get(sid);
+  const steer = router.steer;
+  router.steer = () => {
+    throw new Error('the conversation is gone');
+  };
+  await assert.rejects(api.request('POST', `/needs/${logo.id}/start`, {}), /the conversation is gone/);
+  router.steer = steer;
+  v = await api.request('GET', `/needs/${logo.id}`);
+  assert.deepEqual([v.status, v.archivedAt > 0], ['stopped', true]);
+  v = await api.request('POST', `/needs/${logo.id}/start`, {});
+  assert.deepEqual([v.status, v.archivedAt], ['working', undefined]);
+  env.dispose();
+});
+
 // --- GitHub issues (Bots 0.14) ----------------------------------------------------------------------
 
 test('github: a labelled issue becomes a card of its repository\'s project; the dispatcher\'s work counts toward it and answers on the issue', async () => {

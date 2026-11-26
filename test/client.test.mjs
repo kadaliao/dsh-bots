@@ -2557,6 +2557,153 @@ test('requests: one request shows your words, the question waiting for you, what
   w.hooks.runCleanups();
 });
 
+/** The board, with every GET kept: `asked()` is the query of the last list of cards the host was asked for. */
+async function openBoard(answer = () => null) {
+  const v = await openView('data-dsh-bots-needs-entry');
+  const base = globalThis.fetch;
+  const gets = [];
+  globalThis.fetch = async (url, init) => {
+    if (init?.method !== 'POST') {
+      gets.push(String(url));
+      const mine = answer(new URL(String(url), 'http://x'));
+      if (mine) return { ok: true, json: async () => mine };
+    }
+    return base(url, init);
+  };
+  const asked = () => Object.fromEntries(new URL(gets.filter((u) => u.startsWith('/__dsh_bots/needs?')).at(-1), 'http://x').searchParams);
+  return { v, gets, asked };
+}
+
+test('board filters: a period is whole days of your calendar, days picked by hand count the last one whole, words wait for the input method; Clear puts the board back', async () => {
+  const day = (y, m, d) => String(new Date(y, m - 1, d).getTime());
+  const realNow = Date.now;
+  const { v, asked } = await openBoard();
+  const period = async (id) => {
+    click(v.tree, 'data-dsh-bots-board-period', id);
+    await v.rerender();
+    return asked();
+  };
+  try {
+    // Sunday 1 November 2026, in the afternoon: the week began on Monday 26 October, and the month today.
+    Date.now = () => new Date(2026, 10, 1, 15, 30).getTime();
+    assert.deepEqual(await period('today'), { limit: '300', from: day(2026, 11, 1), to: day(2026, 11, 2) });
+    assert.deepEqual(await period('week'), { limit: '300', from: day(2026, 10, 26), to: day(2026, 11, 2) });
+    assert.deepEqual(await period('month'), { limit: '300', from: day(2026, 11, 1), to: day(2026, 12, 1) });
+    assert.deepEqual(await period('lastMonth'), { limit: '300', from: day(2026, 10, 1), to: day(2026, 11, 1) });
+    // In January, last month is December of the year before.
+    Date.now = () => new Date(2027, 0, 15, 9).getTime();
+    await v.rerender();
+    assert.deepEqual(asked(), { limit: '300', from: day(2026, 12, 1), to: day(2027, 1, 1) });
+    // Narrowed: how many cards that leaves, in place of the week's summary.
+    assert.equal(collect(findAll(v.tree, (n) => n.props['data-dsh-bots-board-matches'] !== undefined)[0]).join(''), 'Matching cards: 5');
+    assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-needs-week'] !== undefined).length, 0);
+    // Days picked by hand: nothing is narrowed until one is picked; the last day counts whole.
+    const date = (key) => findAll(v.tree, (n) => n.props['data-dsh-bots-board-date'] === key)[0];
+    assert.equal(date('from'), undefined);
+    assert.deepEqual(await period('custom'), { limit: '300' });
+    date('from').props.onChange({ target: { value: '2026-11-01' } });
+    date('to').props.onChange({ target: { value: '2026-11-26' } });
+    await v.rerender();
+    assert.deepEqual(asked(), { limit: '300', from: day(2026, 11, 1), to: day(2026, 11, 27) });
+    // The wrong way round is the same days; one end may stay open.
+    date('from').props.onChange({ target: { value: '2026-11-26' } });
+    date('to').props.onChange({ target: { value: '2026-11-01' } });
+    await v.rerender();
+    assert.deepEqual(asked(), { limit: '300', from: day(2026, 11, 1), to: day(2026, 11, 27) });
+    date('from').props.onChange({ target: { value: '' } });
+    await v.rerender();
+    assert.deepEqual(asked(), { limit: '300', to: day(2026, 11, 2) });
+    // Words go to the host with the days; text an input method has not finished is not searched for.
+    const box = () => findAll(v.tree, (n) => n.props['data-dsh-bots-board-search'])[0];
+    box().props.onChange({ target: { value: ' 报价 ' } });
+    await v.rerender();
+    assert.deepEqual(asked(), { limit: '300', to: day(2026, 11, 2), q: '报价' });
+    box().props.onChange({ target: { value: 'baobiao' }, nativeEvent: { isComposing: true } });
+    await v.rerender();
+    assert.deepEqual([box().props.value, asked().q], ['baobiao', '报价']);
+    box().props.onCompositionEnd({ target: { value: '报表' } });
+    await v.rerender();
+    assert.equal(asked().q, '报表');
+    // A project chip picks among what came back; Clear drops the project, the days and the words.
+    click(v.tree, 'data-dsh-bots-board-filter', 'pjopc00001');
+    await v.rerender(1);
+    assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-board-matches'] !== undefined)[0].props['data-dsh-bots-board-matches'], 2);
+    Date.now = realNow;
+    click(v.tree, 'data-dsh-bots-board-clear');
+    await v.rerender();
+    assert.deepEqual(asked(), { limit: '300' });
+    assert.equal(box().props.value, '');
+    assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-board-clear']).length, 0);
+    assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-board-filter'] === 'all')[0].props['data-active'], true);
+    assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-needs-week'] !== undefined).length, 1);
+  } finally {
+    Date.now = realNow;
+    v.hooks.runCleanups();
+  }
+});
+
+test('board archive: Archived lists the cards put away, page by page, searched like the board; Restore and the card\'s page post to their routes', async () => {
+  const card = (id, title, over = {}) => ({ id, title, status: 'done', done: 1, total: 1, bots: ['bot-b'], createdAt: Date.now() - 40 * 24 * 60 * MIN, updatedAt: Date.now() - 30 * 24 * 60 * MIN, archivedAt: Date.now() - 20 * 24 * 60 * MIN, ...over });
+  const shelf = [card('narchive01', 'Quote for Berlin'), card('narchive02', 'Old logo', { status: 'stopped' }), card('narchive03', 'Spring newsletter')];
+  const { v, asked } = await openBoard((url) => {
+    if (url.pathname === '/__dsh_bots/needs/narchive01') return { asks: [], results: [], tickets: [], ...shelf[0] };
+    if (url.pathname !== '/__dsh_bots/needs' || url.searchParams.get('archived') !== '1') return null;
+    // Two cards a page; the second page repeats one (a card changed in between).
+    return url.searchParams.get('offset') ? { items: shelf.slice(1), next_offset: null } : { items: shelf.slice(0, 2), next_offset: 2 };
+  });
+  const listed = () => findAll(findAll(v.tree, (n) => n.props['data-dsh-bots-board-archive'] !== undefined)[0], (n) => n.props['data-dsh-bots-need']).map((n) => n.props['data-dsh-bots-need']);
+  click(v.tree, 'data-dsh-bots-board-archived', 'off');
+  await v.rerender();
+  assert.deepEqual(asked(), { limit: '300', archived: '1' });
+  assert.deepEqual(listed(), ['narchive01', 'narchive02']);
+  assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-board']).length, 0, 'one list, no columns');
+  assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-need'] && n.props.draggable).length, 0);
+  assert.match(collect(v.tree).join(' '), /Archived cards: 2/);
+  // The next page, on request.
+  click(v.tree, 'data-dsh-bots-board-more', 2);
+  await v.rerender();
+  assert.deepEqual(asked(), { limit: '300', archived: '1', offset: '2' });
+  assert.deepEqual(listed(), ['narchive01', 'narchive02', 'narchive03']);
+  assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-board-more'] !== undefined).length, 0);
+  // Words search the archive.
+  findAll(v.tree, (n) => n.props['data-dsh-bots-board-search'])[0].props.onChange({ target: { value: 'quote' } });
+  await v.rerender();
+  assert.deepEqual(asked(), { limit: '300', q: 'quote', archived: '1' });
+  // Restore, from the list: the card is not opened.
+  click(v.tree, 'data-dsh-bots-need-restore', 'narchive02');
+  await v.rerender();
+  assert.deepEqual(v.posts.at(-1), { path: '/__dsh_bots/needs/narchive02/unarchive', body: {} });
+  assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-need-detail'] !== undefined).length, 0);
+  // Its page says it is archived, and restores it too; back, the archive and its search are as they were.
+  click(v.tree, 'data-dsh-bots-need', 'narchive01');
+  await v.rerender();
+  assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-need-archived'] === 'narchive01').length, 1);
+  assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-need-archive'] !== undefined).length, 0);
+  click(v.tree, 'data-dsh-bots-need-unarchive', 'narchive01');
+  await v.rerender();
+  assert.deepEqual(v.posts.at(-1), { path: '/__dsh_bots/needs/narchive01/unarchive', body: {} });
+  click(v.tree, 'data-dsh-bots-needs-back');
+  await v.rerender();
+  assert.deepEqual(asked(), { limit: '300', q: 'quote', archived: '1' });
+  // Back to the board: the cards not archived, still narrowed by the words.
+  click(v.tree, 'data-dsh-bots-board-archived', 'on');
+  await v.rerender();
+  assert.deepEqual(asked(), { limit: '300', q: 'quote' });
+  assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-board']).length, 1);
+  // A card that is done (or dropped) is archived from its page; one under way is not.
+  click(v.tree, 'data-dsh-bots-need', 'ndone0001');
+  await v.rerender();
+  click(v.tree, 'data-dsh-bots-need-archive', 'ndone0001');
+  await v.rerender();
+  assert.deepEqual(v.posts.at(-1), { path: '/__dsh_bots/needs/ndone0001/archive', body: {} });
+  click(v.tree, 'data-dsh-bots-needs-back');
+  await v.rerender();
+  click(v.tree, 'data-dsh-bots-need', 'nworking1');
+  await v.rerender();
+  assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-need-archive'] !== undefined || n.props['data-dsh-bots-need-unarchive'] !== undefined).length, 0);
+  v.hooks.runCleanups();
+});
+
 test('the dispatcher has no mode to pick (0.11): its profile shows the light-model hint, and nothing to switch', async () => {
   const v = await openTab('profile', 'bot-a');
   assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-dispatcher-modes'] !== undefined || n.props['data-dsh-bots-dispatcher-mode'] !== undefined).length, 0);

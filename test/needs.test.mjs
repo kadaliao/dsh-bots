@@ -171,6 +171,52 @@ test('cards keep a project and number, a description, and To do; starting, holdi
   assert.deepEqual([again.projectId, again.number, again.tickets], ['pjzzzzzzzz', 7, ['t1', 't2']]);
 });
 
+test('an archived card is kept through a reload and by prune, and comes back when restored or worked on again', () => {
+  const dir = dirOf();
+  let now = T0;
+  const needs = createNeeds(dir, { now: () => now });
+  const settled = (title) => {
+    now += 1000;
+    const n = needs.create({ title, projectId: 'pjabcdefgh', number: needs.list().length + 1, tickets: [`t-${title}`] });
+    needs.snapshot(n.id, { status: 'done', done: 1, total: 1, failed: 0, stalled: 0 });
+    return needs.get(n.id);
+  };
+  const old = settled('Old');
+  const waits = needs.create({ title: 'Waits for it', todo: true, after: [old.id] });
+  assert.equal(old.archivedAt, undefined, 'a card is on the board until it is archived');
+  now += 1000;
+  const put = needs.archive(old.id);
+  assert.deepEqual([put.archivedAt, put.updatedAt], [now, old.updatedAt], 'putting it away is no change of the request');
+  // Read back by the next process, with its number, its task and the card that waits for it.
+  const again = createNeeds(dir, { now: () => now });
+  assert.deepEqual([again.get(old.id).archivedAt, again.get(old.id).number, again.byTicket('t-Old').id, again.get(waits.id).after], [now, 1, old.id, [old.id]]);
+  // A file written before cards could be archived, or with a bad value: on the board.
+  writeFileSync(join(dir, 'needs.json'), JSON.stringify({ version: 1, needs: [{ id: 'n00000001', title: 'Before' }, { id: 'n00000002', title: 'Odd', archivedAt: 'yes' }] }));
+  assert.deepEqual(createNeeds(dir).list().map((n) => n.archivedAt), [undefined, undefined]);
+  // Prune: newer settled cards push out the old ones, but not the archived one.
+  const newer = [settled('A'), settled('B'), settled('C')];
+  assert.equal(needs.prune({ keepSettled: 1 }), 2);
+  assert.deepEqual(needs.list().map((n) => n.id).sort(), [old.id, waits.id, newer[2].id].sort());
+  assert.equal(needs.prune({ keepSettled: 0 }), 1);
+  assert.ok(needs.get(old.id), 'however many settled cards are kept');
+  // Restored: back on the board as its newest change, so it counts among the settled ones kept.
+  now += 1000;
+  const back = needs.unarchive(old.id);
+  assert.deepEqual([back.archivedAt, back.updatedAt], [undefined, now]);
+  assert.equal(needs.prune({ keepSettled: 1 }), 0);
+  // Work handed out for an archived card again brings it back: a new task, a start, tasks merged into it.
+  needs.archive(old.id);
+  assert.equal(needs.addTicket(old.id, 't-more').archivedAt, undefined);
+  needs.close(old.id, { by: 'user' });
+  needs.archive(old.id);
+  const before = { ...needs.get(old.id) };
+  assert.equal(needs.start(old.id).archivedAt, undefined);
+  // A start that reached nobody leaves it archived, as it was.
+  assert.equal(needs.restore(old.id, before).archivedAt, before.archivedAt);
+  const other = needs.create({ title: 'Same thing', tickets: ['t-other'] });
+  assert.equal(needs.merge(other.id, old.id).archivedAt, undefined);
+});
+
 test('a card links its GitHub issue, on github.com or a GitHub Enterprise server', () => {
   const needs = createNeeds(mkdtempSync(join(tmpdir(), 'bots-needs-')));
   const n = needs.create({
