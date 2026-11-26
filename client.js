@@ -654,6 +654,7 @@ window.__ModuleLoader__.load({
       team: (s = 14) => svg(s, ['M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z', 'M2.5 20a6.5 6.5 0 0 1 13 0', 'M16 4.3a3.5 3.5 0 0 1 0 6.4', 'M18 14.2a6.5 6.5 0 0 1 3.5 5.8']),
       layers: (s = 14) => svg(s, ['M12 3l9 5-9 5-9-5 9-5z', 'M3 13l9 5 9-5']),
       folder: (s = 14) => svg(s, ['M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z']),
+      file: (s = 14) => svg(s, ['M7 3h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z', 'M14 3v4h4']),
       github: (s = 14) => svg(s, ['M9 19c-4 1.5-4-2-6-2.5', 'M15 21v-3.5a3 3 0 0 0-.8-2.3c2.8-.3 5.8-1.4 5.8-6.2a4.8 4.8 0 0 0-1.3-3.3 4.5 4.5 0 0 0-.1-3.3s-1-.3-3.4 1.3a11.6 11.6 0 0 0-6 0C6.8 2.1 5.8 2.4 5.8 2.4a4.5 4.5 0 0 0-.1 3.3A4.8 4.8 0 0 0 4.4 9c0 4.8 3 5.9 5.8 6.2a3 3 0 0 0-.8 2.3V21']),
       wand: (s = 14) => svg(s, ['M4 20l11-11', 'M13 7l4 4', 'M18 3v4', 'M16 5h4', 'M8 3v2', 'M7 4h2']),
       chevron: (s = 12) => svg(s, ['M6 9l6 6 6-6']),
@@ -857,6 +858,14 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
 .dshb-attach-spin{position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid ${tint(C.label, 25)};border-top-color:${C.label};animation:dshb-spin 1s linear infinite}
 .dshb-attach-x{position:absolute;top:2px;right:2px;width:18px;height:18px;padding:0;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
 .dshb-attach-bad{position:absolute;inset:auto 0 0 0;padding:1px 3px;font-size:10px;line-height:1.3;color:#fff;background:${C.error};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dshb-fileref{display:inline-flex;align-items:center;align-self:center;gap:5px;max-width:260px;min-width:0;padding:3px 8px;border-radius:8px;border:1px solid ${C.border1};background:${C.layer2};color:${C.primary};font-size:12px;line-height:1.5}
+.dshb-fileref-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dshb-fileref-x{display:inline-flex;align-items:center;padding:0;border:none;background:transparent;color:${C.muted};cursor:pointer;flex:none}
+.dshb-filepick{display:flex;flex-direction:column;gap:4px;margin:2px 2px 6px;padding:6px;border-radius:9px;border:1px solid ${C.border1};background:${C.layer2}}
+.dshb-filepick-list{display:flex;flex-direction:column;max-height:200px;overflow:auto}
+.dshb-filepick-row{display:flex;align-items:baseline;gap:8px;min-width:0;padding:4px 6px;border:none;border-radius:6px;background:transparent;color:${C.primary};font:inherit;font-size:12px;text-align:left;cursor:pointer;flex:none}
+.dshb-filepick-row:hover:not(:disabled){background:${tint(C.label, 12)}}
+.dshb-filepick-row:disabled{opacity:.5;cursor:default}
 .dshb-imgs{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
 .dshb-img{display:block;padding:0;border:1px solid ${C.border1};border-radius:10px;overflow:hidden;background:${C.layer2};cursor:zoom-in;flex:none}
 .dshb-img img{display:block;width:100%;height:100%;object-fit:cover}
@@ -1716,6 +1725,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             delegation ? h(TaskCard, { t, id: ticketId, botId: m.to, title: firstLine(m.text) }) : null,
             h(Clamp, { t, text: m.text, lines: 6, style: { fontSize: SMALL } }),
             h(MessageImages, { t, images: imagesOf(m), max: 96 }),
+            h(MessageFiles, { files: filesOf(m) }),
             h(LinkCards, { t, text: m.text }),
           ),
         );
@@ -1748,6 +1758,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         short ? h('div', { className: 'dshb-tbody dshb-clamp2', 'data-dsh-bots-short': true }, str(m.text).trim()) : null,
         // The images a bot passed on (Bots 0.17), small, in every level but the one-line one.
         level !== 'line' && imagesOf(m).length ? h('div', { className: 'dshb-tbody' }, h(MessageImages, { t, images: imagesOf(m), max: 56 })) : null,
+        level !== 'line' && filesOf(m).length ? h('div', { className: 'dshb-tbody' }, h(MessageFiles, { files: filesOf(m) })) : null,
       );
     }
 
@@ -1813,6 +1824,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         const state = m.pending || m.failed ? h(SendState, { t, m, onRetry }) : null;
         // Images sent with it (Bots 0.17) go above its words, as a chat app shows them; a message may be images alone.
         const imgs = imagesOf(m);
+        // The workspace files it references go under its words; a message may be references alone.
+        const refs = filesOf(m);
         const worded = str(m.text).trim() !== '' || Boolean(quote);
         // A card started from the board (Bots 0.12): its reference opens it there.
         const card = m.card && typeof m.card === 'object' && typeof m.card.id === 'string' ? m.card : null;
@@ -1850,6 +1863,14 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
                   quote ? h('div', { style: { marginBottom: 5 } }, h(QuoteLine, { t, q: quote, light: true, onOpen: onQuote ? () => onQuote(m) : null })) : null,
                   h(Clamp, { t, text: m.text, lines: 14, light: true }),
                 ),
+              )
+            : null,
+          refs.length
+            ? h(
+                'div',
+                { style: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, width: '100%', minWidth: 0, opacity: m.local && !m.failed ? 0.8 : 1 } },
+                worded || imgs.length ? null : h(ReplyAction, { t, m, onReply }),
+                h('div', { style: { maxWidth: '78%', minWidth: 0 } }, h(MessageFiles, { files: refs, align: 'flex-end' })),
               )
             : null,
           state,
@@ -2896,15 +2917,15 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
        * it shows at once as queued, the Host's copy replaces it, and a failure stays with a way to send
        * again. Resolves `{ok, topic}` (the thread it went into, '' for the chat).
        */
-      const sendText = (body, replyTo = '', again = '', root = '', imgs = []) => {
+      const sendText = (body, replyTo = '', again = '', root = '', imgs = [], files = []) => {
         const id = again || `local-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
         const target = replyTo ? index.byId.get(replyTo) : null;
         // The thread it goes into (the Host says for sure): the pane's own, else the thread of the message it answers, else that message's.
         const topic = replyTo ? root || (target ? threadOfMsg(target) || target.id : replyTo) : '';
         const quoted = target ? { id: target.id, from: target.from, text: str(target.text), ...(str(target.who) ? { who: str(target.who) } : {}) } : null;
-        const row = { id, local: true, pending: true, from: 'user', to: bot.id, chat: bot.id, kind: 'user', text: body, at: Date.now(), ...(topic ? { topic } : {}), ...(replyTo && replyTo !== topic ? { replyTo } : {}), ...(quoted ? { quote: quoted } : {}), ...(imgs.length ? { images: imgs } : {}) };
+        const row = { id, local: true, pending: true, from: 'user', to: bot.id, chat: bot.id, kind: 'user', text: body, at: Date.now(), ...(topic ? { topic } : {}), ...(replyTo && replyTo !== topic ? { replyTo } : {}), ...(quoted ? { quote: quoted } : {}), ...(imgs.length ? { images: imgs } : {}), ...(files.length ? { files: files.map((name) => ({ name })) } : {}) };
         setLocal((list) => [...list.filter((m) => m.id !== id), row]);
-        return postJson('send', { to: bot.id, text: body, ...(replyTo ? { replyTo } : {}), ...(imgs.length ? { images: imgs.map((i) => i.id) } : {}) }).then((r) => {
+        return postJson('send', { to: bot.id, text: body, ...(replyTo ? { replyTo } : {}), ...(imgs.length ? { images: imgs.map((i) => i.id) } : {}), ...(files.length ? { files } : {}) }).then((r) => {
           if (r?.ok) {
             const msg = r.message && typeof r.message === 'object' && r.message.id != null ? r.message : null;
             setLocal((list) => list.flatMap((m) => (m.id !== id ? [m] : msg ? [{ ...msg, pending: msg.pending ?? true, chat: msg.chat ?? bot.id }] : [])));
@@ -2920,19 +2941,21 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       const retry = (m) => {
         if (!m?.local) return;
         const root = threadOfMsg(m);
-        void sendText(str(m.text), root ? str(m.replyTo) || root : '', m.id, root, imagesOf(m));
+        // A message sent from here keeps its files by their paths in the workspace, as they were picked.
+        void sendText(str(m.text), root ? str(m.replyTo) || root : '', m.id, root, imagesOf(m), filesOf(m).map((f) => f.name));
       };
-      const canSend = (text.trim() !== '' || att.images.length > 0) && !att.busy;
+      const canSend = (text.trim() !== '' || att.images.length > 0 || att.files.length > 0) && !att.busy;
       const send = () => {
         const body = text.trim();
         if (!canSend) return;
         const imgs = att.images;
+        const files = att.files;
         const to = quote?.id ?? '';
         setText('');
         setQuote(null);
         att.clear();
         thread.stick();
-        void sendText(body, to, '', '', imgs).then(() => thread.stick());
+        void sendText(body, to, '', '', imgs, files).then(() => thread.stick());
       };
       // A pasted link previews above the composer, as it will in the thread.
       const previewUrl = linksIn(useDebounced(text, 400))[0] ?? '';
@@ -2985,10 +3008,12 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
                 { className: 'dshb-composer', 'data-dsh-bots-composer-box': true, ...dropper.box },
                 quote ? h(QuoteBar, { t, m: quote, onCancel: () => setQuote(null) }) : null,
                 h(AttachStrip, { t, att }),
+                h(FilePicker, { t, att, scope: `bot=${encodeURIComponent(bot.id)}`, attr: 'chat' }),
                 h(
                   'div',
                   { style: { display: 'flex', alignItems: 'flex-end', gap: 8 } },
                   h(AttachButton, { t, att, attr: 'chat' }),
+                  h(FileButton, { t, att, attr: 'chat' }),
                   h('textarea', {
                     'data-dsh-bots-composer': true,
                     ref: input,
@@ -3082,17 +3107,18 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           onSeen?.();
         });
       }, [seenKey, items === null]);
-      const canSend = (text.trim() !== '' || att.images.length > 0) && !att.busy;
+      const canSend = (text.trim() !== '' || att.images.length > 0 || att.files.length > 0) && !att.busy;
       const send = () => {
         const body = text.trim();
         if (!canSend) return;
         const imgs = att.images;
+        const files = att.files;
         const replyTo = quote?.id ?? rootId;
         setText('');
         setQuote(null);
         att.clear();
         stick.stick();
-        void onSend(body, replyTo, '', rootId, imgs).then(() => {
+        void onSend(body, replyTo, '', rootId, imgs, files).then(() => {
           stick.stick();
           void reload();
         });
@@ -3165,10 +3191,12 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             { className: 'dshb-composer', ...dropper.box },
             quote ? h(QuoteBar, { t, m: quote, onCancel: () => setQuote(null), attr: 'data-dsh-bots-thread-quote' }) : null,
             h(AttachStrip, { t, att }),
+            h(FilePicker, { t, att, scope: `bot=${encodeURIComponent(bot.id)}`, attr: 'thread' }),
             h(
               'div',
               { style: { display: 'flex', alignItems: 'flex-end', gap: 8 } },
               h(AttachButton, { t, att, attr: 'thread', size: 32 }),
+              h(FileButton, { t, att, attr: 'thread', size: 32 }),
               h('textarea', {
                 'data-dsh-bots-thread-composer': rootId,
                 value: text,
@@ -4446,13 +4474,14 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           .then((r) => void after(r, t(`taskDid_${action}`)))
           .finally(() => setBusy(''));
       };
-      const canSend = (text.trim() !== '' || att.images.length > 0) && !att.busy && !sending;
+      const canSend = (text.trim() !== '' || att.images.length > 0 || att.files.length > 0) && !att.busy && !sending;
       const send = () => {
         const body = text.trim();
         if (!canSend) return;
         const imgs = att.images;
+        const files = att.files;
         setSending(true);
-        postJson(`tickets/${encodeURIComponent(id)}/message`, { text: body, ...(imgs.length ? { images: imgs.map((i) => i.id) } : {}) })
+        postJson(`tickets/${encodeURIComponent(id)}/message`, { text: body, ...(imgs.length ? { images: imgs.map((i) => i.id) } : {}), ...(files.length ? { files } : {}) })
           .then((r) => {
             if (after(r, t('taskMessageSent', { name }))) {
               setText('');
@@ -4548,7 +4577,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
               fact(t('taskFactFrom'), fromValue, 'from'),
               fact(t('taskFactUpdated'), h('span', { title: fmtDate(toMs(v.updatedAt)) }, fmtAgo(t, v.updatedAt)), 'updated'),
             ),
-            str(v.text).trim() ? h(Section, { title: t('taskAsked') }, h('div', { className: 'dshb-card', 'data-dsh-bots-ticket-text': true, style: { display: 'flex', flexDirection: 'column', gap: 8 } }, h(Clamp, { t, text: v.text, lines: 8, style: { fontSize: SMALL } }), h(MessageImages, { t, images: imagesOf(v), max: 120 }))) : null,
+            str(v.text).trim() ? h(Section, { title: t('taskAsked') }, h('div', { className: 'dshb-card', 'data-dsh-bots-ticket-text': true, style: { display: 'flex', flexDirection: 'column', gap: 8 } }, h(Clamp, { t, text: v.text, lines: 8, style: { fontSize: SMALL } }), h(MessageImages, { t, images: imagesOf(v), max: 120 }), h(MessageFiles, { files: filesOf(v) }))) : null,
             h(
               Section,
               { title: t('taskReports') },
@@ -4613,10 +4642,12 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
                   'div',
                   { className: 'dshb-composer', ...dropper.box },
                   h(AttachStrip, { t, att }),
+                  h(FilePicker, { t, att, scope: `ticket=${encodeURIComponent(id)}`, attr: 'ticket' }),
                   h(
                   'div',
                   { style: { display: 'flex', alignItems: 'flex-end', gap: 8 } },
                   h(AttachButton, { t, att, attr: 'ticket' }),
+                  h(FileButton, { t, att, attr: 'ticket' }),
                   h('textarea', {
                     'data-dsh-bots-ticket-composer': id,
                     value: text,
@@ -4823,16 +4854,29 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
     };
     /** The images of a message the Host listed (`{id, url, width, height, name?}`). */
     const imagesOf = (m) => (Array.isArray(m?.images) ? m.images.filter((i) => i && typeof i.url === 'string' && i.url.startsWith(R)) : []);
+    /** The workspace files a message or a task references (`{name, path?}`: its path in the workspace, and its full one once the Host has it). */
+    const filesOf = (m) => (Array.isArray(m?.files) ? m.files.filter((f) => f && typeof f.name === 'string' && f.name !== '') : []);
+    /** The last part of a path: the file's own name. */
+    const baseName = (path) => str(path).split('/').pop() || str(path);
 
     /**
      * The images attached to a message being written. Each is stored by the Host as soon as it is attached
      * (picked, pasted or dropped), so sending only names them. `{list, add(files), remove(key), clear(), images, busy}`:
-     * `images` are the stored ones, `busy` while one is still on its way.
+     * `images` are the stored ones, `busy` while one is still on its way. And the workspace files it references
+     * (`files`: their paths in the workspace, `addFile(path)`, `removeFile(path)`), chosen in the picker (`picking`).
      */
     function useAttachments(t, toast) {
       const [list, setList] = useState([]);
+      const [files, setFiles] = useState([]);
+      const [picking, setPicking] = useState(false);
       const live = useRef(list);
       live.current = list;
+      const addFile = (path) => {
+        if (files.includes(path)) return;
+        if (files.length >= MAX_ATTACH) toast?.(t('filesMax', { n: MAX_ATTACH }), 'error');
+        else setFiles((l) => (l.includes(path) || l.length >= MAX_ATTACH ? l : [...l, path]));
+      };
+      const removeFile = (path) => setFiles((l) => l.filter((p) => p !== path));
       const add = (files) => {
         const picked = imageFiles(files);
         if (!picked.length) return false;
@@ -4856,12 +4900,17 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           dropUrl(l.find((a) => a.key === key)?.preview);
           return l.filter((a) => a.key !== key);
         });
-      const clear = () =>
+      const clear = () => {
         setList((l) => {
           for (const a of l) dropUrl(a.preview);
           return [];
         });
-      return { list, add, remove, clear, images: list.filter((a) => a.status === 'ready').map((a) => a.image), busy: list.some((a) => a.status === 'uploading') };
+        setFiles([]);
+        setPicking(false);
+      };
+      // A file that is no image cannot be dropped in (the page never learns where it is): the picker references it.
+      const notImage = () => toast?.(t('dropNotImage'), 'error');
+      return { list, add, remove, clear, images: list.filter((a) => a.status === 'ready').map((a) => a.image), busy: list.some((a) => a.status === 'uploading'), files, addFile, removeFile, picking, setPicking, notImage };
     }
 
     /** The composer's handlers for images: pasted (a screenshot) or dropped on it. `drop` says one is being dragged over it. */
@@ -4890,8 +4939,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             if (!dragsFiles(e)) return;
             e.preventDefault?.();
             setDrop(false);
-            // Files that are no images are left out: the composer takes text and images.
-            att.add(e.dataTransfer.files);
+            // Files that are no images are left out: the composer takes text and images, and says where files go.
+            if (!att.add(e.dataTransfer.files)) att.notImage();
           },
         },
       };
@@ -4923,12 +4972,100 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       );
     }
 
-    /** The images attached to a message being written: a thumbnail each, uploading, stored or refused, with a remove button. */
-    function AttachStrip({ t, att }) {
-      if (!att.list.length) return null;
+    /** The "reference a file of the workspace" button of a composer: it opens (and closes) the picker above the box. */
+    function FileButton({ t, att, attr, size = 34 }) {
+      return h(Btn, { kind: 'ghost', icon: Icon.file(16), title: t('attachFile'), 'aria-expanded': att.picking, onClick: () => att.setPicking(!att.picking), 'data-dsh-bots-file-button': attr, style: { width: size, height: size, borderRadius: 9, flex: 'none' } });
+    }
+
+    /**
+     * The picker of a composer: the files of the folder its conversation works in (`scope`: `bot=<id>` or
+     * `ticket=<id>`), searched by name or path as the Host lists them. One click references a file; it stays
+     * open for more.
+     */
+    function FilePicker(props) {
+      return props.att.picking ? h(FilePickerList, props) : null;
+    }
+    function FilePickerList({ t, att, scope, attr }) {
+      const [q, setQ] = useState('');
+      const asked = useDebounced(q, 200).trim();
+      const [found, setFound] = useState(null);
+      useEffect(() => {
+        let live = true;
+        const settle = (r) => {
+          if (live) setFound(r && r.ok && Array.isArray(r.files) ? r : { ok: false, reason: str(r?.reason) });
+        };
+        Promise.resolve(getJson(`files?${scope}&q=${encodeURIComponent(asked)}`)).then(settle, () => settle(null));
+        return () => {
+          live = false;
+        };
+      }, [scope, asked]);
+      const close = () => att.setPicking(false);
+      const full = att.files.length >= MAX_ATTACH;
       return h(
         'div',
-        { className: 'dshb-attach', 'data-dsh-bots-attached': att.list.length },
+        { className: 'dshb-filepick', 'data-dsh-bots-file-picker': attr },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 6, color: C.muted } },
+          Icon.search(13),
+          h('input', {
+            'data-dsh-bots-file-search': attr,
+            value: q,
+            autoFocus: true,
+            placeholder: t('filePickerSearch'),
+            'aria-label': t('filePickerSearch'),
+            onChange: (e) => setQ(e.target.value),
+            onKeyDown: (e) => {
+              if (e.key !== 'Escape') return;
+              e.stopPropagation?.();
+              close();
+            },
+            style: { flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', color: C.primary, font: 'inherit', fontSize: SMALL },
+          }),
+          h('button', { type: 'button', className: 'dshb-fileref-x', title: t('close'), 'aria-label': t('close'), 'data-dsh-bots-file-picker-close': attr, onClick: close }, Icon.close(12)),
+        ),
+        found?.ok && found.root ? h('div', { 'data-dsh-bots-file-root': found.root, title: found.root, style: { fontSize: TINY, color: C.faint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, t('filePickerIn', { dir: found.root })) : null,
+        found === null
+          ? h('div', { style: { fontSize: TINY, color: C.faint, padding: '2px 6px' } }, t('loading'))
+          : !found.ok
+            ? h('div', { 'data-dsh-bots-file-picker-failed': true, style: { fontSize: TINY, color: C.error, padding: '2px 6px' } }, found.reason || t('filePickerFailed'))
+            : found.files.length
+              ? h(
+                  'div',
+                  { className: 'dshb-filepick-list' },
+                  found.files.map((path) => {
+                    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+                    const picked = att.files.includes(path);
+                    return h(
+                      'button',
+                      { key: path, type: 'button', className: 'dshb-filepick-row', title: path, disabled: picked || full, 'data-dsh-bots-file-option': path, 'data-picked': picked || undefined, onClick: () => att.addFile(path) },
+                      h('span', { style: { flex: 'none', display: 'inline-flex', alignSelf: 'center', color: picked ? C.label : C.muted } }, picked ? Icon.check(12) : Icon.file(12)),
+                      h('span', { style: { flex: 'none', maxWidth: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600 } }, baseName(path)),
+                      dir ? h('span', { style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.faint } }, dir) : null,
+                    );
+                  }),
+                )
+              : h('div', { 'data-dsh-bots-file-picker-empty': true, style: { fontSize: TINY, color: C.faint, padding: '2px 6px' } }, t('filePickerEmpty')),
+        found?.ok && found.truncated ? h('div', { style: { fontSize: TINY, color: C.faint, padding: '0 6px' } }, t('filePickerMore')) : null,
+      );
+    }
+
+    /** A message's file references: a chip each, with the file's name (its full path as the tooltip). */
+    function MessageFiles({ files, align = 'flex-start' }) {
+      if (!files?.length) return null;
+      return h(
+        'div',
+        { style: { display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: align, minWidth: 0 } },
+        files.map((f) => h('span', { key: f.path || f.name, className: 'dshb-fileref', 'data-dsh-bots-msg-file': f.name, title: str(f.path) || f.name }, h('span', { style: { display: 'inline-flex', flex: 'none', color: C.muted } }, Icon.file(12)), h('span', { className: 'dshb-fileref-name' }, baseName(f.name)))),
+      );
+    }
+
+    /** What is attached to a message being written: a thumbnail per image (uploading, stored or refused) and a chip per referenced file, each with a remove button. */
+    function AttachStrip({ t, att }) {
+      if (!att.list.length && !att.files.length) return null;
+      return h(
+        'div',
+        { className: 'dshb-attach', 'data-dsh-bots-attached': att.list.length + att.files.length },
         att.list.map((a) =>
           h(
             'div',
@@ -4937,6 +5074,15 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             a.status === 'uploading' ? h('span', { className: 'dshb-attach-spin' }) : null,
             a.status === 'error' ? h('span', { className: 'dshb-attach-bad' }, t('imageRefused')) : null,
             h('button', { type: 'button', className: 'dshb-attach-x', title: t('removeImage'), 'aria-label': t('removeImage'), 'data-dsh-bots-attached-remove': a.key, onClick: () => att.remove(a.key) }, Icon.close(10)),
+          ),
+        ),
+        att.files.map((path) =>
+          h(
+            'span',
+            { key: `file:${path}`, className: 'dshb-fileref', 'data-dsh-bots-file-ref': path, title: path },
+            h('span', { style: { display: 'inline-flex', flex: 'none', color: C.muted } }, Icon.file(12)),
+            h('span', { className: 'dshb-fileref-name' }, baseName(path)),
+            h('button', { type: 'button', className: 'dshb-fileref-x', title: t('removeFile'), 'aria-label': t('removeFile'), 'data-dsh-bots-file-ref-remove': path, onClick: () => att.removeFile(path) }, Icon.close(10)),
           ),
         ),
       );
@@ -9565,6 +9711,15 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         imageFailed: 'The image could not be stored',
         imageRefused: 'Not sent',
         imagesMax: 'A message takes at most {n} images',
+        attachFile: 'Reference a file of the workspace',
+        removeFile: 'Remove this file',
+        filesMax: 'A message references at most {n} files',
+        filePickerSearch: 'Search the workspace by file name or path',
+        filePickerIn: 'Files in {dir}',
+        filePickerEmpty: 'No file matches',
+        filePickerMore: 'More files match: type more of the name',
+        filePickerFailed: 'The files could not be listed',
+        dropNotImage: 'Only images can be dropped here. To point the bot at a file, use "Reference a file of the workspace".',
         openImage: 'Open the image',
         openImageNew: 'Open in a new window',
         prevImage: 'Previous image',
@@ -10669,6 +10824,15 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         imageFailed: '图片没能保存',
         imageRefused: '无法发送',
         imagesMax: '一条消息最多带 {n} 张图片',
+        attachFile: '引用工作区里的文件',
+        removeFile: '移除这个文件',
+        filesMax: '一条消息最多引用 {n} 个文件',
+        filePickerSearch: '按文件名或路径搜索工作区',
+        filePickerIn: '{dir} 里的文件',
+        filePickerEmpty: '没有匹配的文件',
+        filePickerMore: '还有更多匹配的文件，多输入几个字缩小范围',
+        filePickerFailed: '读取文件列表失败',
+        dropNotImage: '这里只能拖入图片。想让 bot 看某个文件，请点「引用工作区里的文件」。',
         openImage: '查看大图',
         openImageNew: '在新窗口打开',
         prevImage: '上一张',

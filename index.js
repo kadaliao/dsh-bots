@@ -60,6 +60,7 @@ import { isLiveSubscriber, isPanelThread, isTopicThread, panelThreadKey, panelTo
 import { cleanDay, createMemory, dreamBotPrompt, dreamTeamPrompt, isProjectScope, KINDS as MEMORY_KINDS, languageOf, looksSecret, parseJsonReply, reflectionPrompt, searchTickets } from './lib/memory.mjs';
 import { createTopics, rotationReason } from './lib/topics.mjs';
 import { createImages, IMAGE_TYPES, idList, imageId, imageNoteText, imageView, MAX_MESSAGE_IMAGES, refsInContent } from './lib/images.mjs';
+import { fileNoteText, fileRefs, listFiles, resolveFiles } from './lib/files.mjs';
 import { chatMessageRef, createDiscussions, forkPoint, messageRef, seqByTime } from './lib/discussions.mjs';
 import { API_KINDS, CODEX_ROUTE, PI_SCOPE, ROUTE_PREFIX, codexAuthFile, createCodexSync, detectLogins, discoverModels, endpointView, keyRefFor, profileFor, readCodexAuth, codexCredential } from './lib/models.mjs';
 
@@ -634,11 +635,21 @@ export function apply(ctx, config, deps = {}) {
     }
   }
 
-  /** Place a new session in the bot's configured folder, or in the shared Bots workspace. */
-  async function botPlace(bot) {
+  /** The folder a bot's own conversation works in: its configured one, or the shared Bots workspace. */
+  function botFolder(bot) {
     const configured = bot && cfg.workdirs?.[bot.handle];
     const folder = typeof configured === 'string' ? configured.trim() : '';
-    const dir = folder && isDirectory(folder) ? folder : workdir;
+    return folder && isDirectory(folder) ? folder : workdir;
+  }
+  /** The folder a task works in (as `ticketPlace` puts it): its project's, else its bot's. */
+  function ticketFolder(t) {
+    const p = t.projectId ? projects.get(t.projectId) : undefined;
+    return p?.dir ? p.dir : botFolder(t.projectId ? undefined : store.get(t.botId));
+  }
+
+  /** Place a new session in the bot's configured folder, or in the shared Bots workspace. */
+  async function botPlace(bot) {
+    const dir = botFolder(bot);
     try {
       if (dir === workdir) mkdirSync(dir, { recursive: true });
       const ws = await service(ctx, 'workspaceRegistry')?.create?.(dir, dir === workdir ? 'Bots' : basename(dir));
@@ -1362,9 +1373,9 @@ export function apply(ctx, config, deps = {}) {
    * and (0.10.1) a teammate's message to the router dispatcher. One sent from a task names it, so the
    * answer goes to that task. Its id (`bots:dm:…`) keeps it a message, not a report on the sender's task.
    */
-  async function deliver(sender, target, text, senderSessionId, refs = []) {
+  async function deliver(sender, target, text, senderSessionId, refs = [], files = []) {
     const body = String(text ?? '').trim();
-    if (body === '' && !refs.length) throw new Error('text must not be empty');
+    if (body === '' && !refs.length && !files.length) throw new Error('text must not be empty');
     if (sender && sender.id === target.id) throw new Error('a bot cannot message itself');
     if (sender && !admitPair(sender.id, target.id)) throw pairRefusal(sender, target);
     // A teammate's message may answer this bot's own question: only a long quiet starts a new topic here.
@@ -1374,14 +1385,15 @@ export function apply(ctx, config, deps = {}) {
     await sendTo(agent, {
       content: [
         { type: 'text', text: dmHeader(sender, fromTask) },
-        { type: 'text', text: dmBody(body || '(images)', sender, fromTask) },
+        { type: 'text', text: dmBody(body || wordless(refs), sender, fromTask) },
+        ...fileBlocks(files),
         ...imageBlocks(refs),
       ],
       source: senderSessionId ? { kind: 'agent-message', form: 'relay', senderSessionId } : { kind: 'user' },
       mode: homeMode(target),
       key: `dm:${randomUUID()}`,
     });
-    store.log({ from: sender ? sender.id : 'user', to: target.id, text: body, kind: 'dm', ...imageIdsOf(refs) });
+    store.log({ from: sender ? sender.id : 'user', to: target.id, text: body, kind: 'dm', ...imageIdsOf(refs), ...filesOf(files) });
     return agent.session.id;
   }
 
@@ -1637,6 +1649,13 @@ export function apply(ctx, config, deps = {}) {
   const imageIdsOf = (refs) => (refs?.length ? { images: refs.map((r) => r.attachmentId) } : {});
   /** The images of a logged message or a task, as the panel shows them (those whose reference is still known). */
   const imageViews = (ids) => idList(ids).map((id) => images.get(id)).filter(Boolean).map((ref) => imageView(ref, R));
+  // --- workspace files a message references ------------------------------------------------------
+  /** A message's file references as a content block: one line that names them by their full paths. */
+  const fileBlocks = (files) => (files?.length ? [{ type: 'text', text: fileNoteText(files) }] : []);
+  /** What a logged message keeps of the files it references (`{path, name}` each). */
+  const filesOf = (files) => (files?.length ? { files } : {});
+  /** What stands for the words of a message that has none: it carries images, or only file references. */
+  const wordless = (refs) => (refs?.length ? '(images)' : '(files)');
 
   function messageView(m) {
     const { sid, images: imgs, ...plain } = m;
@@ -1691,14 +1710,15 @@ export function apply(ctx, config, deps = {}) {
    * dispatcher hears of it without waking. Returns `{sessionId, message?}`, or null when the task did
    * not take it (the dispatcher does then).
    */
-  async function cardFollowUp(bot, body, { need, ticket }, { key, chat = null, messageKey = '', images: refs = [] } = {}) {
+  async function cardFollowUp(bot, body, { need, ticket }, { key, chat = null, messageKey = '', images: refs = [], files = [] } = {}) {
     const id = chat ? '' : newPanelId();
-    if (!chat) store.log({ id, from: 'user', to: ticket.botId, chat: bot.id, kind: 'user', text: body, thread: key, ticket: ticket.id, need: need.id, ...imageIdsOf(refs) });
+    if (!chat) store.log({ id, from: 'user', to: ticket.botId, chat: bot.id, kind: 'user', text: body, thread: key, ticket: ticket.id, need: need.id, ...imageIdsOf(refs), ...filesOf(files) });
     let next;
     try {
       next = await appendToTicket(tickets.get(ticket.id) ?? ticket, body, {
         human: true,
         images: refs,
+        files,
         ...(chat ? { chat, header: chat.header, ...(chat.context ? { context: chat.context } : {}) } : { logged: true }),
         key: chat ? (messageKey ? `${messageKey}:${ticket.id}` : '') : `panel:${id}:${ticket.id}`,
       });
@@ -1864,17 +1884,17 @@ export function apply(ctx, config, deps = {}) {
    * header; other homes take it as a turn of its own). With `replyTo` it is a reply in the thread
    * of that message (Bots 0.10, `threadSend`). Returns `{sessionId, message?}`.
    */
-  async function userSend(target, text, { replyTo = '', card = null, cardAfter = [], images: refs = [] } = {}) {
+  async function userSend(target, text, { replyTo = '', card = null, cardAfter = [], images: refs = [], files = [] } = {}) {
     let body = String(text ?? '').trim();
-    if (body === '' && !refs.length) throw new Error('text must not be empty');
+    if (body === '' && !refs.length && !files.length) throw new Error('text must not be empty');
     const ref = String(replyTo ?? '').trim();
-    if (ref) return threadSend(store.get(target.id) ?? target, body, ref, refs);
+    if (ref) return threadSend(store.get(target.id) ?? target, body, ref, refs, files);
     // A card started from the board (Bots 0.12) is a request, never a command.
     const cmd = card ? null : TOPIC_COMMAND.exec(body);
     if (cmd) {
       const sessionId = await newTopic(target, 'manual');
       body = body.slice(cmd[0].length).trim();
-      if (!body && !refs.length) return { sessionId };
+      if (!body && !refs.length && !files.length) return { sessionId };
     } else await autoTopic(store.get(target.id) ?? target, 'user');
     const bot = store.get(target.id) ?? target;
     const agent = await agentOf(bot);
@@ -1882,18 +1902,18 @@ export function apply(ctx, config, deps = {}) {
     // A message to the dispatcher that starts with a card's reference goes to that card's task (Bots 0.13).
     const lead = !card && isRouterHome(bot, sid) ? leadingCard(body) : null;
     if (lead) {
-      const went = await cardFollowUp(bot, body, lead, { key: panelThreadKey(sid), images: refs });
+      const went = await cardFollowUp(bot, body, lead, { key: panelThreadKey(sid), images: refs, files });
       if (went) return went;
     }
     const id = newPanelId();
-    store.log({ id, from: 'user', to: bot.id, chat: bot.id, kind: 'user', text: body, thread: panelThreadKey(sid), sid, ...(card ? { need: card.id } : {}), ...imageIdsOf(refs) });
+    store.log({ id, from: 'user', to: bot.id, chat: bot.id, kind: 'user', text: body, thread: panelThreadKey(sid), sid, ...(card ? { need: card.id } : {}), ...imageIdsOf(refs), ...filesOf(files) });
     // The panel shows thread replies in the chat: what the person read there since, the main conversation hears first.
     const news = threadNewsFor(bot, sid);
     // The router reads which tasks a message may continue, and the person's open requests (Bots 0.11); a card, what it is (0.12).
     const router = isRouterHome(bot, sid);
     const header = [...(router ? [panelHeaderText({ open: openTasksOf(bot) }, cardCtx()), openNeedsLine(bot), card ? '' : cardsNamedLine(body)] : []), card ? cardHeaderText(card, router, cardAfter) : ''].filter(Boolean).join('\n');
     try {
-      await sendTo(agent, { content: [...[news.text, header, body].filter(Boolean).map((text) => ({ type: 'text', text })), ...imageBlocks(refs)], source: { kind: 'user' }, mode: homeMode(bot), key: `panel:${id}` });
+      await sendTo(agent, { content: [...[news.text, header, body].filter(Boolean).map((text) => ({ type: 'text', text })), ...fileBlocks(files), ...imageBlocks(refs)], source: { kind: 'user' }, mode: homeMode(bot), key: `panel:${id}` });
     } catch (error) {
       // Not handed over: it leaves the chat (the panel keeps its own copy to send again).
       store.patchMessage(id, { hidden: true });
@@ -1910,7 +1930,7 @@ export function apply(ctx, config, deps = {}) {
    * bot's conversation forked at the replied message, so it sees what came before and nothing the
    * main chat said since. Returns `{sessionId, message}`.
    */
-  async function threadSend(bot, body, ref, refs = []) {
+  async function threadSend(bot, body, ref, refs = [], files = []) {
     if (TOPIC_COMMAND.test(body)) throw new Error('a thread has no new topic: send /new in the main chat');
     const quoted = store.message(ref);
     if (!quoted || !inChat(quoted, bot.id)) throw new Error('that message is not in this chat');
@@ -1923,7 +1943,7 @@ export function apply(ctx, config, deps = {}) {
     const key = topicKeyOf(root, rootId) || discussions.byRoot(rootId)?.key || said?.thread || panelThreadKey(homeSid || bot.sessionId || 'panel', rootId);
     const id = newPanelId();
     const aside = quoted.id !== rootId ? quoted : null;
-    store.log({ id, from: 'user', to: bot.id, chat: bot.id, kind: 'user', text: body, thread: key, topic: rootId, ...(aside ? { replyTo: aside.id } : {}), ...imageIdsOf(refs) });
+    store.log({ id, from: 'user', to: bot.id, chat: bot.id, kind: 'user', text: body, thread: key, topic: rootId, ...(aside ? { replyTo: aside.id } : {}), ...imageIdsOf(refs), ...filesOf(files) });
     // A task's thread (opened on the task's own message, or a 0.9 topic it follows): the person's words go to the task.
     // In a discussion they go to its bot, who has the tasks it opened there report back into it.
     const talking = discussions.get(key);
@@ -1937,7 +1957,7 @@ export function apply(ctx, config, deps = {}) {
     }
     if (live.length) {
       try {
-        const sessions = await toTopicTasks(bot, live, body, { key, root: rootId, id, quoted, images: refs });
+        const sessions = await toTopicTasks(bot, live, body, { key, root: rootId, id, quoted, images: refs, files });
         return { sessionId: sessions[0] ?? bot.sessionId, message: messageView(store.message(id)) };
       } catch (error) {
         // No task took it (one ended meanwhile, say): a discussion does.
@@ -1964,7 +1984,7 @@ export function apply(ctx, config, deps = {}) {
         : '';
     store.patchMessage(id, { sid: agent.session.id });
     try {
-      await sendTo(agent, { content: [...[header, body].filter(Boolean).map((text) => ({ type: 'text', text })), ...imageBlocks(refs)], source: { kind: 'user' }, mode: homeMode(bot), key: `panel:${id}` });
+      await sendTo(agent, { content: [...[header, body].filter(Boolean).map((text) => ({ type: 'text', text })), ...fileBlocks(files), ...imageBlocks(refs)], source: { kind: 'user' }, mode: homeMode(bot), key: `panel:${id}` });
     } catch (error) {
       store.patchMessage(id, { hidden: true });
       if (first) discussions.patch(key, { noted: null });
@@ -1979,14 +1999,14 @@ export function apply(ctx, config, deps = {}) {
    * message (a done one opens again; it may take the extra slot), and the chat's bot hears of it
    * without waking. Returns the task Sessions; throws when no task took it.
    */
-  async function toTopicTasks(bot, list, body, { key, root, id, quoted, images: refs = [] }) {
+  async function toTopicTasks(bot, list, body, { key, root, id, quoted, images: refs = [], files = [] }) {
     const reached = [];
     let lastError = null;
     const header = quoted && quoted.id !== root ? panelHeaderText({ replyTo: { who: writerOf(quoted), text: quoted.text } }) : '';
     for (const t of list) {
       const cur = tickets.get(t.id) ?? t;
       try {
-        reached.push(await appendToTicket(cur, body, { human: true, logged: true, header, key: `panel:${id}:${cur.id}`, images: refs }));
+        reached.push(await appendToTicket(cur, body, { human: true, logged: true, header, key: `panel:${id}:${cur.id}`, images: refs, files }));
       } catch (error) {
         lastError = error;
         ctx.logger?.warn?.(`bots: a panel reply did not reach task ${cur.id}: ${error?.message ?? error}`);
@@ -2072,6 +2092,7 @@ export function apply(ctx, config, deps = {}) {
       ...ticketRow(t),
       text: t.text,
       ...(t.images?.length ? { images: imageViews(t.images) } : {}),
+      ...(t.files?.length ? { files: t.files } : {}),
       ...(t.parentId ? { parentId: t.parentId } : {}),
       children: tickets.children(t.id).map((c) => c.id),
       requesterSessionId: t.requester?.sessionId ?? null,
@@ -2565,7 +2586,7 @@ export function apply(ctx, config, deps = {}) {
         return false;
       }
       const started = tickets.start(t.id, { sessionId: agent.session.id });
-      await sendTo(agent, { content: [{ type: 'text', text: assignmentText(started, cardCtx()) }, ...ticketImageBlocks(started)], source: sourceFrom(started.requester), mode: 'steer', key: `assign:${t.id}` });
+      await sendTo(agent, { content: [{ type: 'text', text: assignmentText(started, cardCtx()) }, ...fileBlocks(started.files), ...ticketImageBlocks(started)], source: sourceFrom(started.requester), mode: 'steer', key: `assign:${t.id}` });
       return true;
     } catch (error) {
       const reason = String(error?.message ?? error);
@@ -2737,9 +2758,9 @@ export function apply(ctx, config, deps = {}) {
    * take the extra one); until then it waits on the ticket. A message whose `key` was delivered (or
    * parked) already changes nothing: a replay after a restart neither reopens nor wakes the ticket.
    */
-  async function appendToTicket(t, text, { sender = null, senderSessionId = '', human = false, force = false, header = '', context = '', chat = null, key = '', logged = false, images: refs = [] } = {}) {
+  async function appendToTicket(t, text, { sender = null, senderSessionId = '', human = false, force = false, header = '', context = '', chat = null, key = '', logged = false, images: refs = [], files = [] } = {}) {
     const body = String(text ?? '').trim();
-    if (body === '' && !refs.length) throw new Error('text must not be empty');
+    if (body === '' && !refs.length && !files.length) throw new Error('text must not be empty');
     if (t.archivedAt) throw new Error(`task ${t.id} is archived; open a new task instead`);
     if (key && t.sessionId) {
       await loadHistory(t.sessionId);
@@ -2770,7 +2791,9 @@ export function apply(ctx, config, deps = {}) {
     if (!cur.startedAt) {
       // Images go with the task's assignment, after those it had.
       const more = refs.length ? { images: idList([...(cur.images ?? []), ...refs.map((r) => r.attachmentId)]).slice(-MAX_MESSAGE_IMAGES) } : {};
-      cur = tickets.patch(cur.id, { text: `${cur.text}\n\n--- Added by ${who} ---\n${body || '(images)'}${context ? `\n\n${context}` : ''}`, ...more }) ?? cur;
+      // So do the files it references.
+      if (files.length) more.files = fileRefs([...(cur.files ?? []), ...files]);
+      cur = tickets.patch(cur.id, { text: `${cur.text}\n\n--- Added by ${who} ---\n${body || wordless(refs)}${context ? `\n\n${context}` : ''}`, ...more }) ?? cur;
       void pump();
       return cur;
     }
@@ -2778,7 +2801,7 @@ export function apply(ctx, config, deps = {}) {
       ...(sender
         ? [
             { type: 'text', text: `Bot message from ${who} about task ${cur.id}:` },
-            { type: 'text', text: `${body || '(images)'}\n\n(Answer in a report: bot_send_message with a status, without "to".)` },
+            { type: 'text', text: `${body || wordless(refs)}\n\n(Answer in a report: bot_send_message with a status, without "to".)` },
           ]
         : header
           ? [
@@ -2790,6 +2813,7 @@ export function apply(ctx, config, deps = {}) {
           : body
             ? [{ type: 'text', text: body }]
             : []),
+      ...fileBlocks(files),
       ...imageBlocks(refs),
     ];
     // A person's follow-up may take the extra slot (new work cannot crowd it out); a bot's may not.
@@ -2800,7 +2824,7 @@ export function apply(ctx, config, deps = {}) {
     store.log(
       chat
         ? { from: 'user', to: cur.botId, text: body, kind: 'user', via: chat.kind, ...(chat.who ? { who: chat.who } : {}), ...(chat.threadKey ? { thread: chat.threadKey } : {}), ticket: cur.id, ...imageIdsOf(refs) }
-        : { from: sender ? sender.id : 'user', to: cur.botId, text: body, kind: 'dm', ticket: cur.id, added: true, ...topicFieldsOf(cur), ...imageIdsOf(refs) },
+        : { from: sender ? sender.id : 'user', to: cur.botId, text: body, kind: 'dm', ticket: cur.id, added: true, ...topicFieldsOf(cur), ...imageIdsOf(refs), ...filesOf(files) },
     );
     return tickets.get(cur.id) ?? cur;
   }
@@ -2812,7 +2836,7 @@ export function apply(ctx, config, deps = {}) {
    * once the ticket exists and before it starts (the dispatcher counts it toward a need there, which
    * may file it under a project).
    */
-  async function openTicket(sender, target, text, senderSessionId, { title, thread: chosen, relay = false, projectId = '', onCreate = null, images: refs = [] } = {}) {
+  async function openTicket(sender, target, text, senderSessionId, { title, thread: chosen, relay = false, projectId = '', onCreate = null, images: refs = [], files = [] } = {}) {
     const body = String(text ?? '').trim();
     if (body === '') throw new Error('text must not be empty');
     // The dispatcher only hands out (Bots 0.10; 0.9 let it hand work to itself): the work goes to a teammate.
@@ -2839,8 +2863,9 @@ export function apply(ctx, config, deps = {}) {
       relay,
       projectId: parent?.projectId || projectId,
       images: refs.map((r) => r.attachmentId),
+      files,
     });
-    store.log({ from: sender.id, to: target.id, text: body, kind: 'dm', ticket: t.id, ...topicFieldsOf(t), ...imageIdsOf(refs) });
+    store.log({ from: sender.id, to: target.id, text: body, kind: 'dm', ticket: t.id, ...topicFieldsOf(t), ...imageIdsOf(refs), ...filesOf(files) });
     if (onCreate) {
       try {
         onCreate(t);
@@ -3187,9 +3212,9 @@ export function apply(ctx, config, deps = {}) {
         // own id keeps one still in the inbox from doubling.
         const neverTook = Array.isArray(events) && events.length < HISTORY_TAIL && !events.some((e) => e?.type === 'user/message');
         if (info.created) {
-          await sendTo(agent, { content: [{ type: 'text', text: `${recoveryNoteText(cur)}\n\n${assignmentText(cur, cardCtx())}` }, ...ticketImageBlocks(cur)], source: sourceFrom(cur.requester), mode: 'steer', key: `recover:${cur.id}:new` });
+          await sendTo(agent, { content: [{ type: 'text', text: `${recoveryNoteText(cur)}\n\n${assignmentText(cur, cardCtx())}` }, ...fileBlocks(cur.files), ...ticketImageBlocks(cur)], source: sourceFrom(cur.requester), mode: 'steer', key: `recover:${cur.id}:new` });
         } else if (neverTook) {
-          await sendTo(agent, { content: [{ type: 'text', text: assignmentText(cur, cardCtx()) }, ...ticketImageBlocks(cur)], source: sourceFrom(cur.requester), mode: 'steer', key: `assign:${cur.id}` });
+          await sendTo(agent, { content: [{ type: 'text', text: assignmentText(cur, cardCtx()) }, ...fileBlocks(cur.files), ...ticketImageBlocks(cur)], source: sourceFrom(cur.requester), mode: 'steer', key: `assign:${cur.id}` });
         } else if (interrupted !== null || pending) {
           const mark = interrupted !== null ? `t${interrupted}` : `p${lastEnd}`;
           await sendTo(agent, { content: [{ type: 'text', text: recoveryNoteText(cur) }], source: sourceFrom(cur.requester), mode: 'steer', key: `recover:${cur.id}:${mark}` });
@@ -3574,6 +3599,8 @@ export function apply(ctx, config, deps = {}) {
           const panelId = kind === 'user' ? /^bots:panel:(p[a-z0-9]{8})$/.exec(id)?.[1] : undefined;
           const typed = panelId ? store.message(panelId) : undefined;
           if (typed) said = typedText = typed.text;
+          // The workspace files it references: the work this turn hands out carries them, as it does the images.
+          if (typed?.files?.length) st.files = fileRefs([...(st.files ?? []), ...typed.files]);
           // Where it sits in the conversation, so a reply to it can fork there (Bots 0.10); again at the turn's end.
           const home = bot.sessionId === session.id;
           if (typed && home) {
@@ -4616,6 +4643,7 @@ export function apply(ctx, config, deps = {}) {
         '- In a task conversation, to report to whoever asked: leave out `to`, give `text` and a `status` (progress, done, blocked, question).',
         '- The dispatcher names the person\'s request a task serves with `need`: a short restatement for a new request, or the id of a need already open; and, for a new request that belongs to one of the projects, that project with `project`.',
         '- Images: a new task or message carries the images that came with this turn (or with the task this conversation works on) by itself. To send other images you were sent, or only some, name their ids in `images`; `images: []` sends none.',
+        '- Files: the workspace files the person referenced in this turn (or that came with the task this conversation works on) go along with a new task or message by themselves, as full paths.',
       ].join('\n'),
       parameters: {
         to: { type: 'string', description: '@handle (or id / name) of the bot. Leave it out to report on your own task.' },
@@ -4666,7 +4694,12 @@ export function apply(ctx, config, deps = {}) {
         // The images it carries (Bots 0.17): those named, else the ones that came with this turn (or with this task).
         const namedImages = args.images !== undefined && args.images !== null;
         const ownImages = namedImages ? imageRefs(args.images) : idList(mine ? mine.images : turnState.get(sessionId)?.images).map((id) => images.get(id)).filter(Boolean);
-        const carries = (refs) => (refs.length ? ` It carries ${refs.length === 1 ? 'an image' : `${refs.length} images`}.` : '');
+        // The workspace files the person referenced go along the same way: this turn's, or this task's.
+        const ownFiles = fileRefs(mine ? mine.files : turnState.get(sessionId)?.files);
+        const carries = (refs, files = []) => {
+          const parts = [refs.length ? (refs.length === 1 ? 'an image' : `${refs.length} images`) : '', files.length ? (files.length === 1 ? 'a file reference' : `${files.length} file references`) : ''].filter(Boolean);
+          return parts.length ? ` It carries ${parts.join(' and ')}.` : '';
+        };
         // The person's request it serves (Bots 0.11): only the dispatcher's own conversation names one.
         const routing = Boolean(sender) && !mine && isRouterHome(sender, sessionId);
         let needArg = routing ? String(args.need ?? '').trim().replace(/^need\//, '') : '';
@@ -4715,7 +4748,9 @@ export function apply(ctx, config, deps = {}) {
           if (!needOfTicket(t)) checkCardTurn();
           // A task has the images it was given already; from its own conversation, only those named go along.
           const added = (namedImages || !mine ? ownImages : []).filter((r) => !(t.images ?? []).includes(r.attachmentId));
-          let next = await appendToTicket(t, args.text, { sender: sender ?? null, senderSessionId: sessionId, images: added });
+          // Nor does it get again the file references it has.
+          const addedFiles = (mine ? [] : ownFiles).filter((f) => !(t.files ?? []).some((x) => x.path === f.path));
+          let next = await appendToTicket(t, args.text, { sender: sender ?? null, senderSessionId: sessionId, images: added, files: addedFiles });
           // Carried on from a thread (Bots 0.10): the task follows the thread, and its reports show there.
           const here = !mine ? discussions.bySession(sessionId) : undefined;
           if (here && reportsGoDirect(next) && (next.showIn ?? next.origin?.threadKey) !== here.key) {
@@ -4728,17 +4763,17 @@ export function apply(ctx, config, deps = {}) {
           const need = routing ? needOf(next) : undefined;
           // A task held up by the person (Bots 0.17.2): adding more does not move it; they have to answer.
           const held = waitingFor(next) ? ` It waits for ${waitingFor(next)}: tell the person to answer it there; your message reaches it after that.` : '';
-          return { ok: true, text: `Added to task ${next.id} (${stageOf(next)}${waits}).${carries(added)}${held} ${after}; do not wait for it.${needText(need)}`, ticket: row(next), ...(need ? { need: { id: need.id, title: need.title } } : {}), to: face(target), from: face(sender) };
+          return { ok: true, text: `Added to task ${next.id} (${stageOf(next)}${waits}).${carries(added, addedFiles)}${held} ${after}; do not wait for it.${needText(need)}`, ticket: row(next), ...(need ? { need: { id: need.id, title: need.title } } : {}), to: face(target), from: face(sender) };
         }
         if (!named) throw new Error(mine ? 'say which bot with `to`, or leave it out and give a `status` to report on your task' : 'say which bot with `to`');
 
         // A teammate's message to the router dispatcher (0.10.1): no task for it (it does no work itself),
         // the text goes into its own conversation, where its router limits hold and it routes it.
         if (sender && named.id !== sender.id && isRouter(named)) {
-          await deliver(sender, named, args.text, sessionId, ownImages);
+          await deliver(sender, named, args.text, sessionId, ownImages, ownFiles);
           return {
             ok: true,
-            text: `Delivered to @${named.handle}, the dispatcher, in its own conversation:${carries(ownImages)} it does no work itself, so this opens no task. It tells the person what they should know; if it answers you, the answer ${mine ? 'arrives here' : 'reaches you'} by itself (do not wait for it). Work you need done goes to the teammate who does it.`,
+            text: `Delivered to @${named.handle}, the dispatcher, in its own conversation:${carries(ownImages, ownFiles)} it does no work itself, so this opens no task. It tells the person what they should know; if it answers you, the answer ${mine ? 'arrives here' : 'reaches you'} by itself (do not wait for it). Work you need done goes to the teammate who does it.`,
             to: face(named),
             from: face(sender),
           };
@@ -4765,7 +4800,7 @@ export function apply(ctx, config, deps = {}) {
             const pid = need?.projectId ?? projectArg?.id;
             if (pid && made.projectId !== pid) tickets.patch(made.id, { projectId: pid });
           };
-          const t = await openTicket(sender, named, args.text, sessionId, { title: args.title, thread: chosen, relay, projectId: projectArg?.id ?? '', onCreate, images: ownImages });
+          const t = await openTicket(sender, named, args.text, sessionId, { title: args.title, thread: chosen, relay, projectId: projectArg?.id ?? '', onCreate, images: ownImages, files: ownFiles });
           if (need) need = needs.get(need.id) ?? need;
           const stage = stageOf(t);
           const who = named.id === sender.id ? 'yourself' : `@${named.handle}`;
@@ -4775,13 +4810,13 @@ export function apply(ctx, config, deps = {}) {
           const said =
             stage === 'failed'
               ? `Task ${t.id} for ${who} could not start: ${t.error ?? 'unknown error'}.`
-              : `Opened task ${t.id} for ${who} (${stage === 'queued' ? 'queued: it starts when another task finishes' : stage}).${carries(ownImages)} ${answer}${needText(need)}`;
+              : `Opened task ${t.id} for ${who} (${stage === 'queued' ? 'queued: it starts when another task finishes' : stage}).${carries(ownImages, ownFiles)} ${answer}${needText(need)}`;
           return { ok: stage !== 'failed', text: said, ticket: row(t), stage, ...(need ? { need: { id: need.id, title: need.title } } : {}), to: face(named), from: face(sender) };
         }
         // Into the other bot's home: the user, from a conversation that belongs to no bot.
         if (chosen) throw new Error('`thread` is for opening a task; this message goes to the bot\'s own conversation, so leave it out');
-        await deliver(sender ?? null, named, args.text, sessionId, ownImages);
-        return { ok: true, text: `Delivered to @${named.handle}.${carries(ownImages)} Its answer will arrive as a new message; continue with other work or end your turn.`, to: face(named), from: face(sender) };
+        await deliver(sender ?? null, named, args.text, sessionId, ownImages, ownFiles);
+        return { ok: true, text: `Delivered to @${named.handle}.${carries(ownImages, ownFiles)} Its answer will arrive as a new message; continue with other work or end your turn.`, to: face(named), from: face(sender) };
       },
     }),
     defineTool({
@@ -6228,8 +6263,19 @@ export function apply(ctx, config, deps = {}) {
       post: async (body) => {
         const bot = store.get(String(body.to ?? ''));
         if (!bot) return { ok: false, reason: 'no such bot' };
-        const sent = await userSend(bot, body.text, { replyTo: String(body.replyTo ?? ''), images: imageRefs(body.images) });
+        const sent = await userSend(bot, body.text, { replyTo: String(body.replyTo ?? ''), images: imageRefs(body.images), files: resolveFiles(botFolder(bot), body.files) });
         return { ok: true, sessionId: sent.sessionId, ...(sent.message ? { message: sent.message } : {}) };
+      },
+    },
+    // The files of the folder a bot's conversation (`bot`) or a task (`ticket`) works in, for the composer's
+    // picker: a message references them by the paths listed here.
+    files: {
+      get: (url) => {
+        const t = url.searchParams.get('ticket') ? tickets.get(url.searchParams.get('ticket')) : undefined;
+        const bot = t ? undefined : store.get(url.searchParams.get('bot') ?? '');
+        if (!t && !bot) return { ok: false, reason: 'no such bot or task' };
+        const root = t ? ticketFolder(t) : botFolder(bot);
+        return { ok: true, root, ...listFiles(root, url.searchParams.get('q') ?? '') };
       },
     },
     // An image the person attached in the panel (Bots 0.17), stored before the message that carries it is sent.
@@ -6574,7 +6620,7 @@ export function apply(ctx, config, deps = {}) {
           case 'retry':
             return { ok: true, ...ticketView(await retryTicket(t)) };
           case 'message':
-            return { ok: true, ...ticketView(await appendToTicket(t, body.text, { human: true, force: true, images: imageRefs(body.images) })) };
+            return { ok: true, ...ticketView(await appendToTicket(t, body.text, { human: true, force: true, images: imageRefs(body.images), files: resolveFiles(ticketFolder(t), body.files) })) };
           default:
             throw new Error('no such route');
         }
