@@ -3770,9 +3770,9 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         afterList(row).length
           ? h(
               'span',
-              { 'data-dsh-bots-need-after': afterList(row).map((x) => x.ref || x.id).join(','), style: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: TINY, color: row.afterStuck ? C.warn : C.muted, minWidth: 0 } },
+              { 'data-dsh-bots-need-after': afterList(row).map((x) => x.ref || x.id).join(','), 'data-error': row.afterError ? true : undefined, title: row.afterError ? str(row.afterError) : undefined, style: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: TINY, color: row.afterStuck || row.afterError ? C.warn : C.muted, minWidth: 0 } },
               Icon.clock(11),
-              h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.afterStuck ? t('afterStuck', { refs: afterRefs(row, true) }) : t('afterWaiting', { refs: afterRefs(row) })),
+              h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.afterError ? t('afterFailed', { reason: str(row.afterError) }) : row.afterStuck ? t('afterStuck', { refs: afterRefs(row, true) }) : t('afterWaiting', { refs: afterRefs(row) })),
             )
           : null,
         h(
@@ -3909,7 +3909,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             'div',
             { className: 'dshb-composer', 'data-dsh-bots-card-attachments': true, ...dropper.box },
             h(AttachStrip, { t, att }),
-            h(FilePicker, { t, att, env, scope: `card=1${pid ? `&project=${encodeURIComponent(pid)}` : ''}`, attr: 'card' }),
+            h(FilePicker, { t, att, env, scope: `card=1${pid ? `&project=${encodeURIComponent(pid)}` : ''}`, attr: 'card', full: true }),
             h('div', { style: { display: 'flex', alignItems: 'center', gap: 4 } }, h(AttachButton, { t, att, attr: 'card', size: 30 }), h(FileButton, { t, att, attr: 'card', size: 30 })),
           ),
         ),
@@ -3921,17 +3921,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             { label: t('cardProject'), style: { flex: '1 1 200px' } },
             h(
               'select',
-              {
-                className: 'dshb-input',
-                value: pid,
-                onChange: (e) => {
-                  const dirOf = (id) => str(projects.find((p) => p.id === id)?.dir);
-                  // A file picked in the old project's folder is named by its path there: it does not carry over.
-                  if (dirOf(e.target.value) !== dirOf(pid)) for (const path of att.files) if (!/^[/~]/.test(path)) att.removeFile(path);
-                  setPid(e.target.value);
-                },
-                'data-dsh-bots-card-project': true,
-              },
+              { className: 'dshb-input', value: pid, onChange: (e) => setPid(e.target.value), 'data-dsh-bots-card-project': true },
               h('option', { value: '' }, t('noProject')),
               projects.map((p) => h('option', { key: p.id, value: p.id }, `${p.key} · ${p.name}`)),
             ),
@@ -4458,7 +4448,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             v.status === 'todo'
               ? h(
                   Section,
-                  { title: t('cardAfter'), hint: waits.length ? (v.afterStuck ? t('afterStuckHint') : t('afterHint')) : t('afterNoneHint') },
+                  { title: t('cardAfter'), hint: waits.length ? (v.afterError ? t('afterFailedHint', { reason: str(v.afterError) }) : v.afterStuck ? t('afterStuckHint') : t('afterHint')) : t('afterNoneHint') },
                   h(
                     'div',
                     { 'data-dsh-bots-need-after-edit': v.id, style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
@@ -5172,7 +5162,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
     function FilePicker(props) {
       return props.att.picking ? h(FilePickerList, props) : null;
     }
-    function FilePickerList({ t, att, scope, attr, env }) {
+    function FilePickerList({ t, att, scope, attr, env, full: fullPaths = false }) {
       const [q, setQ] = useState('');
       const settled = useDebounced(q, 200).trim();
       // A cleared box asks at once (as when another folder is chosen): the old words are not searched there.
@@ -5192,8 +5182,9 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       }, [scope, asked, dir]);
       const close = () => att.setPicking(false);
       const full = att.files.length >= MAX_ATTACH;
-      // A file of the conversation's folder is referenced by its path there, one elsewhere by its full path.
-      const refOf = (path) => (found?.elsewhere ? `${str(found.root).replace(/[\\/]+$/, '')}/${path}` : path);
+      // A file of the conversation's folder is referenced by its path there, one elsewhere by its full path
+      // (every one, with `full`: a new card's folder changes with its project).
+      const refOf = (path) => (found?.elsewhere || fullPaths ? `${str(found.root).replace(/[\\/]+$/, '')}/${path}` : path);
       const canPick = typeof env?.pickDirectory === 'function' && env.canPickDirectory?.() !== false;
       const pickDir = () => {
         setPickError('');
@@ -10796,6 +10787,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         afterStuck: 'Waits for {refs}, which will not get done',
         afterHint: 'It starts by itself once these are done, and reads what they delivered.',
         afterStuckHint: 'One of them was dropped or did not get done: it will not start by itself. Start it, or wait for others.',
+        afterFailed: 'Did not start: {reason}',
+        afterFailedHint: 'They are done, but it did not start: {reason}. Once that is fixed it starts by itself; or start it now.',
         afterNoneHint: 'Make it start by itself once other cards are done.',
         afterAdd: 'Wait for a card…',
         afterRemove: 'Do not wait for it',
@@ -11952,6 +11945,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         afterStuck: '在等 {refs}，但它做不成了',
         afterHint: '这些卡都完成后，它会自动开始，并读到它们交付的结果。',
         afterStuckHint: '其中有卡被取消或没做成，它不会自动开始了。可以手动开始，或者改等别的卡。',
+        afterFailed: '没能开始：{reason}',
+        afterFailedHint: '等的卡都完成了，但它没能开始：{reason}。处理好以后它会自动开始，也可以现在手动开始。',
         afterNoneHint: '设置成等别的卡完成后自动开始。',
         afterAdd: '等一张卡……',
         afterRemove: '不等它了',

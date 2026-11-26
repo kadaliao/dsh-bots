@@ -3991,9 +3991,15 @@ test('board: a new card takes pasted images and files picked in its project\'s f
     assert.deepEqual(gets, ['/__dsh_bots/files?card=1&project=pjopc00001&q=']);
     click(v.tree, 'data-dsh-bots-file-option', 'docs/plan.md');
     await v.rerender(1);
+    findAll(v.tree, (n) => n.props['data-dsh-bots-card-project'])[0].props.onChange({ target: { value: '' } });
+    await v.rerender(1);
+    findAll(v.tree, (n) => n.props['data-dsh-bots-card-project'])[0].props.onChange({ target: { value: 'pjopc00001' } });
+    await v.rerender(1);
+    assert.deepEqual(findAll(v.tree, (n) => n.props['data-dsh-bots-file-ref']).map((n) => n.props['data-dsh-bots-file-ref']), ['/Users/me/opc/docs/plan.md']);
     click(v.tree, 'data-dsh-bots-card-later');
     await v.rerender();
-    assert.deepEqual(v.posts.find((p) => p.path.endsWith('/needs/create')).body, { title: 'Fix the login page', description: '', projectId: 'pjopc00001', assignee: '', start: false, images: ['att000000001'], files: ['docs/plan.md'] });
+    // By its full path: the card's folder changes with its project, and a file picked stays the same file.
+    assert.deepEqual(v.posts.find((p) => p.path.endsWith('/needs/create')).body, { title: 'Fix the login page', description: '', projectId: 'pjopc00001', assignee: '', start: false, images: ['att000000001'], files: ['/Users/me/opc/docs/plan.md'] });
     v.hooks.runCleanups();
   } finally {
     globalThis.fetch = plain;
@@ -4167,6 +4173,25 @@ test('board: a card started from the board shows in the chat with its reference,
   await v.rerender();
   assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-need-detail'] === 'ntodo0001').length, 1);
   v.hooks.runCleanups();
+});
+
+test('waiting cards: one whose wait is over but that did not start says why, on the board and on its page', async () => {
+  const i = NEEDS.findIndex((r) => r.id === 'ntodo0001');
+  const row = NEEDS[i];
+  const reason = 'a file of this card was moved or deleted (notes.txt): put it back, or remove it from the card';
+  NEEDS[i] = { ...row, after: [{ ...row.after[0], status: 'done' }], afterError: reason };
+  try {
+    const v = await openView('data-dsh-bots-needs-entry');
+    const line = findAll(findAll(v.tree, (n) => n.props['data-dsh-bots-need'] === 'ntodo0001')[0], (n) => n.props['data-dsh-bots-need-after'] === 'OPC-1')[0];
+    assert.equal(line.props['data-error'], true);
+    assert.equal(collect(line).join(''), `Did not start: ${reason}`);
+    click(v.tree, 'data-dsh-bots-need', 'ntodo0001');
+    await v.rerender();
+    assert.ok(collect(v.tree).join(' ').includes(`They are done, but it did not start: ${reason}. Once that is fixed it starts by itself`));
+    v.hooks.runCleanups();
+  } finally {
+    NEEDS[i] = row;
+  }
 });
 
 test('waiting cards: a card in To do says what it waits for; its page adds and removes cards and names who takes it; a new card can start after one', async () => {

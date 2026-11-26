@@ -2306,6 +2306,40 @@ test('board: a card filed with images and files hands them out with it, to the d
   assert.ok(textIn(h.agentsById.get(sid).deliveries.at(-1).message).includes(`[File referenced: ${plan.path}.`));
 });
 
+test('board: a waiting card whose files are gone stays in To do and the board says why; each comes off on its own, and it starts then', async (t) => {
+  const { api, h, dirs, textIn, call } = filesBoot(t);
+  writeFileSync(join(dirs.shared, 'brief.md'), 'the brief');
+  const research = await api.request('POST', '/needs/create', { title: 'Research', assignee: '@scout' });
+  const next = await api.request('POST', '/needs/create', { title: 'Write it up', after: [research.id], files: ['notes.txt', 'brief.md', 'docs/plan.md'] });
+  assert.equal(next.status, 'todo');
+  rmSync(join(dirs.shared, 'notes.txt'));
+  rmSync(join(dirs.shared, 'brief.md'));
+  await call('bot_send_message', { status: 'done', text: 'Found it.' }, api.tickets.get(research.tickets[0].id).sessionId);
+  await tick();
+  await settle();
+  // Its wait is over, but two of its files are gone: it stays, and its row and page say why.
+  const kept = await api.request('GET', `/needs/${next.id}`);
+  assert.equal(kept.status, 'todo');
+  assert.match(kept.afterError, /2 files of this card were moved or deleted \(notes\.txt, brief\.md\)/);
+  assert.equal((await api.request('GET', '/needs')).items.find((r) => r.id === next.id).afterError, kept.afterError);
+  // One comes off though the other is gone too (it is the card's own, not checked again); a new one is checked.
+  const plan = join(dirs.shared, 'docs', 'plan.md');
+  await assert.rejects(api.request('POST', `/needs/${next.id}/save`, { files: [plan, 'nowhere.md'] }), /no file nowhere\.md/);
+  const one = await api.request('POST', `/needs/${next.id}/save`, { files: [join(dirs.shared, 'brief.md'), plan] });
+  assert.deepEqual(one.files.map((f) => f.name), ['brief.md', 'docs/plan.md']);
+  // Saved, it is tried again at once: still one file short, it says which.
+  await tick();
+  await settle();
+  assert.match((await api.request('GET', `/needs/${next.id}`)).afterError, /a file of this card was moved or deleted \(brief\.md\)/);
+  await api.request('POST', `/needs/${next.id}/save`, { files: [plan] });
+  await tick();
+  await settle();
+  const started = await api.request('GET', `/needs/${next.id}`);
+  assert.deepEqual([started.status, started.afterError], ['working', undefined]);
+  const said = textIn(h.agentsById.get(api.store.find('atlas').sessionId).deliveries.at(-1).message);
+  assert.ok(said.includes(`[File referenced: ${plan}.`));
+});
+
 test('board: projects are kept through their routes; a card filed for the dispatcher counts its tasks, which work in the project folder', async () => {
   const env = boardBoot();
   const { h, api, folder, made } = env;

@@ -60,7 +60,7 @@ import { isLiveSubscriber, isPanelThread, isTopicThread, panelThreadKey, panelTo
 import { cleanDay, createMemory, dreamBotPrompt, dreamTeamPrompt, isProjectScope, KINDS as MEMORY_KINDS, languageOf, looksSecret, parseJsonReply, reflectionPrompt, searchTickets } from './lib/memory.mjs';
 import { createTopics, rotationReason } from './lib/topics.mjs';
 import { createImages, IMAGE_TYPES, idList, imageId, imageNoteText, imageView, MAX_MESSAGE_IMAGES, refsInContent } from './lib/images.mjs';
-import { fileNoteText, fileRefs, pickerFiles, resolveFile, resolveFiles } from './lib/files.mjs';
+import { fileNoteText, fileRefs, MAX_MESSAGE_FILES, pickerFiles, resolveFile, resolveFiles } from './lib/files.mjs';
 import { chatMessageRef, createDiscussions, forkPoint, messageRef, seqByTime } from './lib/discussions.mjs';
 import { API_KINDS, CODEX_ROUTE, PI_SCOPE, ROUTE_PREFIX, codexAuthFile, createCodexSync, detectLogins, discoverModels, endpointView, keyRefFor, profileFor, readCodexAuth, codexCredential } from './lib/models.mjs';
 
@@ -1865,6 +1865,17 @@ export function apply(ctx, config, deps = {}) {
     }
     return { images: refs, files };
   }
+  /**
+   * The files a card is saved with (`paths`, as `needs/<ref>/save` takes them): one it has already stays as
+   * it is, so a file moved since can still be taken off; a new one is checked as a message's is, in the
+   * folder of project `p` (the dispatcher's without one).
+   */
+  function savedCardFiles(n, paths, p) {
+    const own = new Map(fileRefs(n?.files).map((f) => [f.path, f]));
+    const list = [...new Set((Array.isArray(paths) ? paths : paths === undefined || paths === null || paths === '' ? [] : [paths]).map((r) => (typeof r === 'string' ? r.trim() : r)))];
+    if (list.length > MAX_MESSAGE_FILES) throw new Error(`a card carries at most ${MAX_MESSAGE_FILES} file references`);
+    return fileRefs(list.map((rel) => own.get(rel) ?? resolveFile(cardFolder(p), rel)));
+  }
 
   /**
    * A card the person filed on the board (Bots 0.12): a need with their title and description, under
@@ -2350,8 +2361,9 @@ export function apply(ctx, config, deps = {}) {
   // Cards in To do whose wait is over start by themselves: after any change of a need, and at each upkeep.
   let waitingTimer = null;
   const startingNow = new Set();
-  // A card whose start failed is tried again at the next upkeep, not at once (its restore is a change too).
-  const startFailedAt = new Map();
+  // A card whose start failed is tried again at the next upkeep, not at once (its restore is a change too);
+  // the board says why it has not started (`afterError`), and a change the person saves tries it again at once.
+  const startFailed = new Map();
   const RETRY_WAITING_MS = 4 * 60_000;
   function scheduleWaiting() {
     if (waitingTimer) return;
@@ -2364,15 +2376,15 @@ export function apply(ctx, config, deps = {}) {
   async function startWaiting() {
     for (const n of needs.list()) {
       if (!n.todo || !n.after?.length || startingNow.has(n.id)) continue;
-      if (nowMs() - (startFailedAt.get(n.id) ?? 0) < RETRY_WAITING_MS) continue;
+      if (nowMs() - (startFailed.get(n.id)?.at ?? 0) < RETRY_WAITING_MS) continue;
       const { state, list } = afterState(n);
       if (state !== 'ready') continue;
       startingNow.add(n.id);
       try {
         await startCard(n, n.startWith ?? '', { after: list });
-        startFailedAt.delete(n.id);
+        startFailed.delete(n.id);
       } catch (error) {
-        startFailedAt.set(n.id, nowMs());
+        startFailed.set(n.id, { at: nowMs(), reason: String(error?.message ?? error) });
         ctx.logger?.warn?.(`bots: card ${cardRefOf(n) || n.id} did not start after the cards it waited for: ${error?.message ?? error}`);
       } finally {
         startingNow.delete(n.id);
@@ -2430,12 +2442,17 @@ export function apply(ctx, config, deps = {}) {
       ...(n.archivedAt ? { archivedAt: n.archivedAt } : {}),
     };
   }
-  /** What a card in To do waits for, as the board shows it (Bots 0.13): `after` and, when it will not start by itself, `afterStuck`. */
+  /**
+   * What a card in To do waits for, as the board shows it (Bots 0.13): `after` and, when it will not start by
+   * itself, `afterStuck`; when its wait is over but it did not start, `afterError` (why: a file of it gone, say).
+   */
   function afterRow(n) {
     const { state, list } = afterState(n);
+    const failed = state === 'ready' ? startFailed.get(n.id) : undefined;
     return {
       after: list.map(({ need: x, status }) => ({ id: x.id, title: x.title, status, ...(cardRefOf(x) ? { ref: cardRefOf(x) } : {}) })),
       ...(state === 'stuck' ? { afterStuck: true } : {}),
+      ...(failed ? { afterError: failed.reason } : {}),
       ...(n.startWith ? { startWith: n.startWith } : {}),
     };
   }
@@ -6755,13 +6772,16 @@ export function apply(ctx, config, deps = {}) {
             // The images and files it goes out with: those given replace its own.
             const attach = {
               ...(body.images !== undefined ? { images: imageRefs(body.images).map((r) => r.attachmentId) } : {}),
-              ...(body.files !== undefined ? { files: resolveFiles(cardFolder(body.projectId !== undefined ? p : projectOfNeed(n)), body.files) } : {}),
+              ...(body.files !== undefined ? { files: savedCardFiles(n, body.files, body.projectId !== undefined ? p : projectOfNeed(n)) } : {}),
             };
             if (body.title !== undefined) needs.rename(n.id, body.title);
             if (body.description !== undefined) needs.describe(n.id, body.description);
             if (body.images !== undefined || body.files !== undefined) needs.attach(n.id, attach);
             if (body.projectId !== undefined) fileNeed(needs.get(n.id), p);
+            // A waiting card that did not start is tried again now: what kept it may be what changed.
+            startFailed.delete(n.id);
             if (body.after !== undefined || body.startWith !== undefined) waitCard(needs.get(n.id), { after: body.after, startWith: body.startWith });
+            scheduleWaiting();
             return { ok: true, ...needView(needs.get(n.id)) };
           }
           // Put a card that is done or dropped away, off the board; and back.

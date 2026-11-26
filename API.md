@@ -875,7 +875,7 @@ NeedRow = {
   done, total, failed?, stalled?, waiting?: string[] /* task ids asking the person */,
   bots: string[], via?, who?, threadKey?, asked? /* the first message, ≤ 200 */,
   latest?: { status, at, botId, ticket, preview },   // a question waiting for the person first, else the latest report
-  after?: { id, title, status, ref? }[], afterStuck?: true, startWith?,   // a card in To do only
+  after?: { id, title, status, ref? }[], afterStuck?: true, afterError?: string, startWith?,   // a card in To do only
   createdAt, updatedAt, endedAt?, closed?, archivedAt?,
 }
 NeedView = NeedRow & { asks, description?, images?: Image[] /* those whose reference is still known */, files?: FileRef[], tickets: TicketRow[], results: { at, botId, ticket, text }[] /* done reports */ }
@@ -917,7 +917,7 @@ a chat message's source line.
 | POST | `needs/<ref>/done` | `{}` | `{ ok, ...NeedView }`: open tasks ended `done` by the user, the card closed with `outcome: 'done'` |
 | POST | `needs/<ref>/rename` | `{ title }` | `{ ok, ...NeedView }` |
 | POST | `needs/<ref>/drop` | `{}` | `{ ok, ...NeedView }`: open tasks stopped by the user |
-| POST | `needs/<ref>/save` | `{ title?, description?, projectId? ('' for none), after?: (id \| ref)[] ([] for none), startWith?: bot ('' for the dispatcher), images?: string[], files?: string[] ([] for none: they replace the card's) }` | `{ ok, ...NeedView }`. Another project gives it the next number there, and the tasks it opens from then on work on that project (tasks it has keep theirs). Everything is checked before anything changes |
+| POST | `needs/<ref>/save` | `{ title?, description?, projectId? ('' for none), after?: (id \| ref)[] ([] for none), startWith?: bot ('' for the dispatcher), images?: string[], files?: string[] ([] for none: they replace the card's) }` | `{ ok, ...NeedView }`. Another project gives it the next number there, and the tasks it opens from then on work on that project (tasks it has keep theirs). In `files`, the full path of a file the card has keeps it as it is (one moved since can still be taken off); any other is checked as a message's is. Everything is checked before anything changes |
 | POST | `needs/<ref>/archive` | `{}` | `{ ok, ...NeedView }` with `archivedAt`; only a card that is `done` or `stopped` (`only a card that is done or dropped can be archived: …`). One already archived stays as it is |
 | POST | `needs/<ref>/unarchive` | `{}` | `{ ok, ...NeedView }`: back on the board. One that is not archived stays as it is |
 
@@ -932,7 +932,8 @@ to the dispatcher as the panel message's images and file block, so the work it h
 to one teammate as the ticket's `images` and `files`, which its assignment carries. The card's folder, which its
 `files` paths are in (`GET files?card=1&project=<id>?`), is its project's, else the dispatcher's. Its files are looked
 up again at each start: one moved or deleted since refuses the start, the card stays as it was, and the panel lets the
-person take it off the card (`needs/<ref>/save` with `files`).
+person take it off the card (`needs/<ref>/save` with `files`). The panel's picker names a new card's files by their
+full paths, so a file picked stays the same file when the person changes the card's project.
 
 - **To the dispatcher** (no `assignee`, or the dispatcher, or a lone dispatcher): `send` as a panel message whose text
   is the title and description, logged with `need: <id>` (`GET messages` adds `card`). The router reads, after
@@ -975,7 +976,9 @@ unknown card (`no card X to wait for`), itself, more than 10, and a loop (`OPC-3
 would wait for each other`). Its wait is `ready` when every card it waits for is `done` (a merged one is followed, a
 pruned one dropped from the list), `stuck` when one is `stopped` or `failed` (`afterStuck`: it does not start by
 itself), else waiting. After any change of a need (on the next tick) and at every upkeep, each ready card starts with
-`startWith` as the assignee; a start that fails is tried again 4 minutes later at the earliest. It starts as a card
+`startWith` as the assignee; a start that fails is tried again 4 minutes later at the earliest, or at once when the
+person saves the card (`needs/<ref>/save`), and until it starts its row says why (`afterError`, the start's error, such
+as a file of it gone). It starts as a card
 does with, for each card it waited for, `It waited for OPC-11 ("…"), which is done now: "<its latest done report, ≤
 600 characters>"` (and `… (bot_recall need/OPC-11 reads all of it)` when cut): below its text for a task of one bot, or
 on the lines after the `[Card …]` header, which then reads `… to start once other cards were done; it starts now.`
