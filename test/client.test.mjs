@@ -1374,6 +1374,53 @@ test('0.17: teams of your own — the rail shows them in their colour with an ed
   }
 });
 
+test('a new team that takes bots from other teams says which and from where first; cancelled, nothing moves and the form stays', async () => {
+  const savedTeams = STATE.teams;
+  STATE.teams = [{ id: 'opc', name: { en: 'Amazon US', zh: 'Amazon US' }, tagline: { en: '', zh: '' }, color: '#10b981', template: 'opc', renamed: true, members: ['bot-b'], lead: 'bot-b' }];
+  try {
+    await withRoster([BOTS[0], { ...BOTS[1], team: 'opc', lead: true }, BOTS[2]], async () => {
+      const v = await mountPanel();
+      click(v.tree, 'data-dsh-bots-new');
+      await v.rerender();
+      findAll(v.tree, (n) => n.props.role === 'menuitem' && collect(n).join(' ').includes('New team'))[0].props.onClick();
+      await v.rerender();
+      findAll(v.tree, (n) => n.props['data-dsh-bots-field'] === 'team-name')[0].props.onChange({ target: { value: 'Supply chain' } });
+      const check = (id) => findAll(findAll(v.tree, (n) => n.props['data-dsh-bots-team-member'] === id)[0], (n) => n.props.type === 'checkbox')[0].props.onChange();
+      check('bot-b');
+      check('bot-c');
+      await v.rerender();
+      // Picked from another team: the row says it moves, and that its team loses its lead.
+      assert.deepEqual(findAll(v.tree, (n) => n.props['data-dsh-bots-team-member-moves']).map((n) => n.props['data-dsh-bots-team-member-moves']), ['bot-b']);
+      assert.match(collect(findAll(v.tree, (n) => n.props['data-dsh-bots-team-member-moves'])[0]).join(''), /without a lead/);
+      click(v.tree, 'data-dsh-bots-team-save', 'new');
+      await v.rerender();
+      // Nothing is created yet: the bots that move, and where from, are listed.
+      assert.equal(v.posts.filter((p) => p.path.endsWith('/teams/create')).length, 0);
+      assert.deepEqual(findAll(v.tree, (n) => n.props['data-dsh-bots-team-move']).map((n) => [n.props['data-dsh-bots-team-move'], n.props['data-lead']]), [['bot-b', true]]);
+      const said = collect(findAll(v.tree, (n) => n.props['data-dsh-bots-team-moves'])[0]).join(' ');
+      assert.match(said, /Creating “Supply chain” moves them to it/);
+      assert.match(said, /leads Amazon US now/);
+      // Cancelled: back to the form as it was.
+      findAll(v.tree, (n) => n.type === 'button' && collect(n).join('') === 'Cancel')[0].props.onClick();
+      await v.rerender();
+      assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-team-moves']).length, 0);
+      assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-field'] === 'team-name')[0].props.value, 'Supply chain');
+      assert.equal(v.posts.filter((p) => p.path.endsWith('/teams/create')).length, 0);
+      // Confirmed: created with both.
+      click(v.tree, 'data-dsh-bots-team-save', 'new');
+      await v.rerender();
+      confirmButton(v.tree).props.onClick();
+      await v.rerender(6);
+      const created = v.posts.find((p) => p.path.endsWith('/teams/create'));
+      assert.ok(created, 'created once confirmed');
+      assert.deepEqual(created.body, { name: 'Supply chain', tagline: '', color: created.body.color, members: ['bot-b', 'bot-c'] });
+      v.hooks.runCleanups();
+    });
+  } finally {
+    STATE.teams = savedTeams;
+  }
+});
+
 test('0.16.1: the rail\'s views are one-line tiles, two to a line, with their words as tooltips', async () => {
   await withTaskState({ state: { attention: ATTENTION, needs: { waiting: 0, working: 2 } }, ...TASK_COUNTS }, async () => {
     const v = await mountPanel();
@@ -3900,6 +3947,61 @@ test('threads: every new word has English and Chinese', async () => {
   for (const k of keys) assert.doesNotMatch(zh[k], /话题/, k);
 });
 
+test('board: a new card takes pasted images and files picked in its project\'s folder, and posts their ids and paths', async () => {
+  const v = await openView('data-dsh-bots-needs-entry');
+  const plain = globalThis.fetch;
+  const gets = [];
+  globalThis.fetch = async (url, init) => {
+    const path = String(url);
+    if (path.endsWith('/images') && init?.method === 'POST') {
+      const body = JSON.parse(init.body);
+      v.posts.push({ path, body });
+      return { ok: true, json: async () => ({ ok: true, image: { id: 'att000000001', url: '/__dsh_bots/image/att000000001', width: 800, height: 600, name: body.name } }) };
+    }
+    if (path.startsWith('/__dsh_bots/files?')) {
+      gets.push(path);
+      return { ok: true, json: async () => ({ ok: true, root: '/Users/me/opc', files: ['docs/plan.md'], truncated: false }) };
+    }
+    return plain(url, init);
+  };
+  const saved = { FileReader: globalThis.FileReader, createObjectURL: URL.createObjectURL };
+  globalThis.FileReader = class {
+    readAsDataURL(file) {
+      this.result = `data:${file.type};base64,iVBORw0KGgo=`;
+      setTimeout(() => this.onload?.(), 0);
+    }
+  };
+  URL.createObjectURL = () => 'blob:preview';
+  try {
+    click(v.tree, 'data-dsh-bots-board-new');
+    await v.rerender(1);
+    findAll(v.tree, (n) => n.props['data-dsh-bots-card-title'])[0].props.onChange({ target: { value: 'Fix the login page' } });
+    findAll(v.tree, (n) => n.props['data-dsh-bots-card-project'])[0].props.onChange({ target: { value: 'pjopc00001' } });
+    await v.rerender(1);
+    // A screenshot pasted into the description is stored at once.
+    let prevented = false;
+    findAll(v.tree, (n) => n.props['data-dsh-bots-card-description'])[0].props.onPaste({ clipboardData: { files: [{ name: 'login.png', type: 'image/png' }] }, preventDefault: () => (prevented = true) });
+    assert.equal(prevented, true);
+    await new Promise((r) => setTimeout(r, 5));
+    await v.rerender();
+    assert.deepEqual(findAll(v.tree, (n) => n.props['data-dsh-bots-attached-item']).map((n) => n.props['data-dsh-bots-attached-item']), ['ready']);
+    // The file picker looks in the folder of the project chosen.
+    click(v.tree, 'data-dsh-bots-file-button', 'card');
+    await v.rerender();
+    assert.deepEqual(gets, ['/__dsh_bots/files?card=1&project=pjopc00001&q=']);
+    click(v.tree, 'data-dsh-bots-file-option', 'docs/plan.md');
+    await v.rerender(1);
+    click(v.tree, 'data-dsh-bots-card-later');
+    await v.rerender();
+    assert.deepEqual(v.posts.find((p) => p.path.endsWith('/needs/create')).body, { title: 'Fix the login page', description: '', projectId: 'pjopc00001', assignee: '', start: false, images: ['att000000001'], files: ['docs/plan.md'] });
+    v.hooks.runCleanups();
+  } finally {
+    globalThis.fetch = plain;
+    globalThis.FileReader = saved.FileReader;
+    URL.createObjectURL = saved.createObjectURL;
+  }
+});
+
 test('board: cards filter by project; a new card posts what the person filled in, now or for later; dragging starts one or marks it done', async () => {
   const v = await openView('data-dsh-bots-needs-entry');
   // Filters: every card, a project's, those under none.
@@ -4033,6 +4135,27 @@ test('board: a card in To do shows its reference and description, starts with wh
   await v.rerender();
   assert.ok(v.posts.some((p) => p.path.endsWith('/needs/ntodo0001/done')));
   v.hooks.runCleanups();
+});
+
+test('board: a card in To do shows what it was filed with, and one of them can be taken off before it starts', async () => {
+  const kept = NEED_DETAIL.ntodo0001;
+  NEED_DETAIL.ntodo0001 = { ...kept, images: [{ id: 'att000000001', url: '/__dsh_bots/image/att000000001', width: 800, height: 600, name: 'login.png' }], files: [{ path: '/Users/me/opc/docs/plan.md', name: 'docs/plan.md' }, { path: '/Users/me/opc/notes.txt', name: 'notes.txt' }] };
+  try {
+    const v = await openView('data-dsh-bots-needs-entry');
+    click(v.tree, 'data-dsh-bots-need', 'ntodo0001');
+    await v.rerender();
+    assert.equal(findAll(v.tree, (n) => n.props['data-dsh-bots-need-attachments'])[0].props['data-dsh-bots-need-attachments'], 3);
+    assert.deepEqual(findAll(v.tree, (n) => n.props['data-dsh-bots-need-file']).map((n) => n.props['data-dsh-bots-need-file']), ['/Users/me/opc/docs/plan.md', '/Users/me/opc/notes.txt']);
+    click(v.tree, 'data-dsh-bots-need-file-remove', '/Users/me/opc/notes.txt');
+    await v.rerender();
+    assert.deepEqual(v.posts.find((p) => p.path.endsWith('/needs/ntodo0001/save')).body, { files: ['/Users/me/opc/docs/plan.md'] });
+    click(v.tree, 'data-dsh-bots-need-image-remove', 'att000000001');
+    await v.rerender();
+    assert.deepEqual(v.posts.filter((p) => p.path.endsWith('/needs/ntodo0001/save')).at(-1).body, { images: [] });
+    v.hooks.runCleanups();
+  } finally {
+    NEED_DETAIL.ntodo0001 = kept;
+  }
 });
 
 test('board: a card started from the board shows in the chat with its reference, which opens the card', async () => {

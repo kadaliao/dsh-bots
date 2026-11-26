@@ -2252,6 +2252,60 @@ test('files: work handed to a teammate in another folder carries the references 
   assert.ok(textIn(h.agentsById.get(task.sessionId).deliveries.at(-1).message).includes(`[File referenced: ${join(dirs.shared, 'docs', 'plan-final.md')}.`));
 });
 
+test('board: a card filed with images and files hands them out with it, to the dispatcher or straight to a bot; a file gone since keeps it in To do', async (t) => {
+  const { api, h, dirs, textIn, listed } = filesBoot(t);
+  // Harness's attachment store, as images-host.test.mjs fakes it: it takes the image and gives its reference.
+  h.services.attachments = {
+    async admitPromptContent(content) {
+      return content.map((part) => (part.type === 'image' ? { type: 'image', attachment: { attachmentId: 'attcard0001', mediaType: part.mediaType, bytes: 32, width: 640, height: 480, name: 'shot.png' } } : part));
+    },
+  };
+  const shot = (await api.routes.images.post({ mediaType: 'image/png', data: Buffer.from('png bytes').toString('base64'), name: 'shot.png' })).image;
+  const imagesIn = (m) => m.content.filter((b) => b.type === 'image').map((b) => b.attachment.attachmentId);
+  // The new card's picker looks in the dispatcher's folder, or in its project's.
+  const { project } = await api.request('POST', '/projects/save', { project: { name: 'Engineering', dir: dirs.forge } });
+  assert.equal(listed('card=1').root, dirs.shared);
+  assert.equal(listed(`card=1&project=${project.id}`).root, dirs.forge);
+
+  // Handed to the dispatcher: it reads them with the card, and the work it hands out carries them.
+  const plan = { path: join(dirs.shared, 'docs', 'plan.md'), name: 'docs/plan.md' };
+  const card = await api.request('POST', '/needs/create', { title: 'Build the plan', images: [shot.id], files: ['docs/plan.md'] });
+  assert.equal(card.status, 'working');
+  assert.deepEqual([card.images.map((i) => i.id), card.files], [[shot.id], [plan]]);
+  const sid = api.store.find('atlas').sessionId;
+  const said = h.agentsById.get(sid).deliveries.at(-1).message;
+  assert.ok(textIn(said).includes(`[File referenced: ${plan.path}.`));
+  assert.deepEqual(imagesIn(said), [shot.id]);
+  const [r] = await h.step(sid, { calls: [{ name: 'bot_send_message', args: { to: '@forge', text: 'Build it.' } }] });
+  assert.match(r.text, /It carries an image and a file reference\./);
+  assert.deepEqual([api.tickets.get(r.ticket.id).images, api.tickets.get(r.ticket.id).files], [[shot.id], [plan]]);
+
+  // Handed straight to a bot, under a project: paths are the project folder's, and the task's assignment carries them.
+  const theirs = { path: join(dirs.forge, 'docs', 'plan.md'), name: 'docs/plan.md' };
+  const direct = await api.request('POST', '/needs/create', { title: 'Review the plan', projectId: project.id, assignee: '@scout', images: [shot.id], files: ['docs/plan.md'] });
+  const task = api.tickets.get(direct.tickets[0].id);
+  assert.deepEqual([task.images, task.files], [[shot.id], [theirs]]);
+  const first = h.agentsById.get(task.sessionId).deliveries[0].message;
+  assert.ok(textIn(first).includes(`[File referenced: ${theirs.path}.`));
+  assert.deepEqual(imagesIn(first), [shot.id]);
+
+  // Checked as a message's are: nothing is filed then.
+  const count = (await api.request('GET', '/needs')).items.length;
+  await assert.rejects(api.request('POST', '/needs/create', { title: 'x', files: ['nowhere.md'] }), /no file nowhere\.md: it was moved or deleted/);
+  await assert.rejects(api.request('POST', '/needs/create', { title: 'x', images: ['nosuchimage'] }), /no image nosuchimage/);
+  assert.equal((await api.request('GET', '/needs')).items.length, count);
+
+  // Kept for later, then a file moves: the card stays in To do, saying which; taken off the card, it starts.
+  const later = await api.request('POST', '/needs/create', { title: 'Tidy the notes', start: false, files: ['notes.txt', 'docs/plan.md'] });
+  assert.deepEqual([later.status, later.files.map((f) => f.name)], ['todo', ['notes.txt', 'docs/plan.md']]);
+  renameSync(join(dirs.shared, 'notes.txt'), join(dirs.shared, 'notes-old.txt'));
+  await assert.rejects(api.request('POST', `/needs/${later.id}/start`, {}), /a file of this card was moved or deleted \(notes\.txt\): put it back, or remove it from the card/);
+  assert.equal((await api.request('GET', `/needs/${later.id}`)).status, 'todo');
+  assert.deepEqual((await api.request('POST', `/needs/${later.id}/save`, { files: [plan.path] })).files, [plan]);
+  assert.equal((await api.request('POST', `/needs/${later.id}/start`, {})).status, 'working');
+  assert.ok(textIn(h.agentsById.get(sid).deliveries.at(-1).message).includes(`[File referenced: ${plan.path}.`));
+});
+
 test('board: projects are kept through their routes; a card filed for the dispatcher counts its tasks, which work in the project folder', async () => {
   const env = boardBoot();
   const { h, api, folder, made } = env;

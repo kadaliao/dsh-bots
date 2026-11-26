@@ -57,7 +57,8 @@ belongs to no team.
 **Your own teams.** A team doesn't have to be a template. **New bot → New team** makes one with your name, a
 description and a colour, the bots in it and its lead (say "Amazon US" with an operator, a sourcer and a supply-chain
 bot); it shows in the list under its name, before it has any bots, and the bots read the roster under that name and
-description. A hired template team can be renamed, described and recoloured the same way (the pencil on its header in
+description. A bot you pick that is in another team moves to the new one: before the team is made, the panel lists
+those bots, the team each comes from and whether it leads it, and you confirm or go back. A hired template team can be renamed, described and recoloured the same way (the pencil on its header in
 the list, or **Your teams** on the Teams page); clear a field to get the template's back. Your own teams can be deleted
 there: their bots stay, in no team. Leads work the same in your teams as in hired ones.
 
@@ -177,7 +178,10 @@ up), and several messages (you ask, then add "include the UK in the Europe one",
   for it count toward the card. Given to one teammate, it goes straight to that bot as a task, opened on the
   dispatcher's behalf: the card shows in the dispatcher's chat with the bot's answers under it, a reply to it goes to
   the task, and the dispatcher is told without being woken. **Add to To do** keeps it for later; **Start** on the
-  card's page (or a drag) hands it out then.
+  card's page (or a drag) hands it out then. Paste or drop screenshots into the card, or pick files of this computer
+  (the project's folder first, the dispatcher's without one; files are named by path, not copied): they go out with it
+  whenever it starts, to the dispatcher, who passes them on, or straight to the teammate. If a file is moved or
+  deleted before a card in To do starts, the card stays there and says which; take it off on the card's page.
 - **Projects** group cards and number them: a card filed under project `OPC` is `OPC-1`, `OPC-2`… (numbers are not
   reused). A project has a **folder** and a **brief**. Its tasks work in the folder, which Harness adds as a workspace
   (the same one when the folder is a workspace already); every task of the project reads the brief, and the project's
