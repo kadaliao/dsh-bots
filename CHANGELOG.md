@@ -5,6 +5,14 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 What changed in each version of Bots, newest first, and what to do after upgrading. Bots tells you when a new
 version is out ([Updates](README.md#updates)).
 
+## 0.18.0 — 2026-11-26
+
+- **Point a bot at files.** A file button beside the image button, in a bot's chat, a thread and a task, references
+  up to ten files of your computer: search the folder the conversation works in, paste a full path (`/…`, `~/…`) to
+  look elsewhere, or click **Another folder…**. The bot gets each file's full path and reads it with its own file
+  tools, so nothing is uploaded or copied, and work it hands on takes the references along. Messages and tasks keep
+  the full paths of the files they reference. See [The chat](README.md#the-chat-reply-to-a-message-to-open-a-thread).
+
 ## 0.17.6 — 2026-11-25
 
 - **Bots checks for a new version when you open its panel, not on a timer.** It asks about Bots only, at most once a
