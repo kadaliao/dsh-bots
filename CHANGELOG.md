@@ -5,6 +5,17 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 What changed in each version of Bots, newest first, and what to do after upgrading. Bots tells you when a new
 version is out ([Updates](README.md#updates)).
 
+## 0.19.0 — 2026-11-26
+
+- **Find a card on the board.** Below the project chips, filter the cards by when they were filed (**Today**, **This
+  week**, **This month**, **Last month**, or **Custom** days, the last one included) and search their numbers, titles
+  and descriptions. The filters work together and with the project, and reach every card, however old; with more cards
+  than one page holds, **Load more** fetches the next ones.
+- **Archive what is finished.** A card that is done or dropped has **Archive** on its page: it leaves the board and
+  waits under **Archived**, with its number, tasks and results, where it is searched the same way and **Restore**d.
+  Archived cards are never pruned; a follow-up on one, or starting it again, puts it back on the board. See
+  [The board](README.md#the-board-every-request-as-a-card-filed-under-projects).
+
 ## 0.18.1 — 2026-11-26
 
 - **Images is featured in the app gallery, beside Open Computer Use.** Its card at the top of a bot's **Apps** page
