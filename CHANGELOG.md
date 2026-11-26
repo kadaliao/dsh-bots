@@ -5,6 +5,14 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 What changed in each version of Bots, newest first, and what to do after upgrading. Bots tells you when a new
 version is out ([Updates](README.md#updates)).
 
+## 0.18.1 — 2026-11-26
+
+- **Images is featured in the app gallery, beside Open Computer Use.** Its card at the top of a bot's **Apps** page
+  says whether this Harness has the Images plugin (`@kadaliao/dsh-images`), and **Install now** installs it through
+  Harness's plugin manager; a card that says **Turned off** switches it back on. One install serves every bot, and
+  **Add** turns drawing back on for a bot that has it off. Then choose the image model in the **Images** panel, under
+  **Settings**. See [Images](README.md#images).
+
 ## 0.18.0 — 2026-11-26
 
 - **Point a bot at files.** A file button beside the image button, in a bot's chat, a thread and a task, references
