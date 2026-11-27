@@ -429,30 +429,39 @@ bot 知道的事靠记忆延续。下面几种情况会开新话题：
 
 飞书走长连接：由 Harness 主动连到飞书，电脑不需要公网地址。国际版 Lark 步骤相同，面板会自己判断应用属于哪一边。
 
-1. 打开开发者后台 https://open.feishu.cn/app （Lark：https://open.larksuite.com/app），创建企业自建应用。
-2. 「添加应用能力」→ 添加「机器人」。
-3. 「权限管理」开通权限（可用「批量导入/导出权限」粘贴下方 JSON）：
+1. 打开开发者后台 https://open.feishu.cn/app （Lark：https://open.larksuite.com/app），创建应用，类型选「智能体」。
+   机器人能力、所需权限、长连接收消息都已配好，不用再手动开权限、订阅事件或发布版本。
+2. 在「凭证与基础信息」复制 App ID 和 App Secret，填到 Bot 的「应用 → 飞书」并保存，长连接会上线。
+3. 在飞书里打开和机器人的单聊（搜索应用名，或点面板里的「在飞书中打开」），发送配对码。群聊里先把机器人拉进群，再 @ 它。
+
+<details>
+<summary>已有的企业自建应用</summary>
+
+企业自建应用照样能用，只是要自己配：
+
+1. 「添加应用能力」→ 添加「机器人」。
+2. 「权限管理」开通权限（可用「批量导入/导出权限」粘贴下方 JSON）：
    - 必需：`im:message.p2p_msg:readonly`、`im:message.group_at_msg:readonly`、`im:message:send_as_bot`
    - 可选：`contact:contact.base:readonly` + `contact:user.base:readonly`（显示姓名），
      `im:message.reactions:write_only`（处理中显示表情），`im:chat:readonly`（显示群名），
      `im:message:readonly`（读取你发的图片，以及下文说的聊天上下文：你回复的那条消息、转发给 Bot 的聊天记录），
      `im:message.group_msg`（读取话题里前面的消息；敏感权限，需管理员审核）
-4. 在「凭证与基础信息」复制 App ID 和 App Secret，填到 Bot 的「应用 → 飞书」并保存。长连接会上线；
-   如果提示开启机器人，说明还没发布版本，长连接此时已在线，不影响下一步。
-5. 保持 Harness 运行，到「事件与回调」→「事件配置」把订阅方式改为「使用长连接接收事件」并保存（必须有长连接在线才能保存）。
-6. 「添加事件」→ 添加 `im.message.receive_v1`（接收消息）。
-7. 「版本管理与发布」→ 创建版本，可用范围包含要使用的人 → 发布（可能需要管理员审核）。
-8. 在飞书里打开和机器人的单聊（搜索应用名，或点面板里的「在飞书中打开」），发送配对码。群聊里先把机器人拉进群，再 @ 它。
+3. 把 App ID 和 App Secret 填到 Bot 的「应用 → 飞书」并保存。如果提示开启机器人，说明还没发布版本，长连接此时已在线，不影响下一步。
+4. 保持 Harness 运行，到「事件与回调」→「事件配置」把订阅方式改为「使用长连接接收事件」并保存（必须有长连接在线才能保存）。
+5. 「添加事件」→ 添加 `im.message.receive_v1`（接收消息）。
+6. 「版本管理与发布」→ 创建版本，可用范围包含要使用的人 → 发布（可能需要管理员审核）。
+
+```json
+{"scopes":{"tenant":["im:message.p2p_msg:readonly","im:message.group_at_msg:readonly","im:message:send_as_bot","im:message.reactions:write_only","contact:contact.base:readonly","contact:user.base:readonly","im:chat:readonly","im:message:readonly"],"user":[]}}
+```
+
+</details>
 
 请用专门给这个团队新建的应用：同一个 App ID 有多个程序连着时，每条消息只会交给其中一个。
 
 **图片。** 发一张图，或者发带图的富文本消息，Bot 看到的和你在面板里附的图一样：聊天里显示缩略图，调度员派活时会把图一起交给队友。频道只在确认这条消息是你（已配对）发给 Bot 的之后才去飞书取图，每条最多十张，每张不超过 20 MB（PNG、JPEG、WebP 或 GIF）。图原来在哪，正文那里就写 `[image]`，所以取不到的图（没开 `im:message:readonly` 权限、太大、格式不支持）Bot 也知道那里原本有张图；Harness 日志会写明为什么没取到。
 
-**聊天上下文。** 你的消息如果回复了另一条消息、发在话题或回复串里，或者是转发给 Bot 的聊天记录，频道会先从飞书读出这些内容，再交给团队：你回复的那条消息、回复串的第一条或话题里最近十条消息、最多三十条转发的消息（文件和图片只写名字）。调度员和你的消息一起读到它们；它开出的任务会留着你的原话和这段上下文，还有这个聊天的 ID，装了「飞书开放平台」应用的 Bot 可以接着往下查。这样干活的 Bot 知道你说的"这个"指什么。这些消息常常是没配对的人写的（群里的同事）：他们的话会发给 Bot 用的模型，也会存进 `tickets.json`，和你自己把它粘贴进来一样。只有配对者的消息指向它们时（回复、话题、转发）才会读取；权限就是开关，不想让它们进来就别开 `im:message:readonly`，并让 Bot 所在群里的人知道这件事。单独转发的聊天记录，也会跟着你十分钟内发的下一条消息（比如"总结一下"）进到它开出的任务里。没开上面的权限时，消息照常送达，Harness 日志会提示该开哪个权限。
-
-```json
-{"scopes":{"tenant":["im:message.p2p_msg:readonly","im:message.group_at_msg:readonly","im:message:send_as_bot","im:message.reactions:write_only","contact:contact.base:readonly","contact:user.base:readonly","im:chat:readonly","im:message:readonly"],"user":[]}}
-```
+**聊天上下文。** 你的消息如果回复了另一条消息、发在话题或回复串里，或者是转发给 Bot 的聊天记录，频道会先从飞书读出这些内容，再交给团队：你回复的那条消息、回复串的第一条或话题里最近十条消息、最多三十条转发的消息（文件和图片只写名字）。调度员和你的消息一起读到它们；它开出的任务会留着你的原话和这段上下文，还有这个聊天的 ID，装了「飞书开放平台」应用的 Bot 可以接着往下查。这样干活的 Bot 知道你说的"这个"指什么。这些消息常常是没配对的人写的（群里的同事）：他们的话会发给 Bot 用的模型，也会存进 `tickets.json`，和你自己把它粘贴进来一样。只有配对者的消息指向它们时（回复、话题、转发）才会读取；权限就是开关，不想让它们进来就在「权限管理」里去掉 `im:message:readonly`，并让 Bot 所在群里的人知道这件事。单独转发的聊天记录，也会跟着你十分钟内发的下一条消息（比如"总结一下"）进到它开出的任务里。没开上面的权限时，消息照常送达，Harness 日志会提示该开哪个权限。
 
 ### Slack
 

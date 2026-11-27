@@ -557,25 +557,39 @@ Feishu uses its long connection: the Harness connects out to Feishu, so your com
 address. The same steps work for Lark; the panel finds out which one your app belongs to.
 
 1. Open the developer console at https://open.feishu.cn/app (Lark: https://open.larksuite.com/app) and
-   **Create Custom App**.
-2. **Add Features** → **Bot**.
-3. **Permissions & Scopes** (**Batch import/export scopes** accepts the JSON below):
+   create an app of the **Agent** type (智能体). The bot, the scopes it needs and the long connection for
+   messages come set up, so there are no scopes to add, events to subscribe or versions to publish.
+2. Copy the **App ID** and **App Secret** from **Credentials & Basic Info** into the bot's **Apps** →
+   **Feishu / Lark**, and save. The long connection comes up.
+3. In Feishu, open a chat with the bot (search for the app, or use **Open in Feishu** in the panel) and
+   send the pairing code. For a group, add the bot to the group and @ it.
+
+<details>
+<summary>An existing custom app</summary>
+
+A custom app still works; you set it up yourself:
+
+1. **Add Features** → **Bot**.
+2. **Permissions & Scopes** (**Batch import/export scopes** accepts the JSON below):
    - required: `im:message.p2p_msg:readonly`, `im:message.group_at_msg:readonly`, `im:message:send_as_bot`
    - optional: `contact:contact.base:readonly` + `contact:user.base:readonly` (sender names),
      `im:message.reactions:write_only` (a "Typing" reaction while the team works), `im:chat:readonly` (group names),
      `im:message:readonly` (the images you send, and the chat context below: the message you reply to, chat history you forward),
      `im:message.group_msg` (the earlier messages of a topic; a sensitive scope an admin approves)
-4. Copy the **App ID** and **App Secret** from **Credentials & Basic Info** into the bot's **Apps** →
-   **Feishu / Lark**, and save. The long connection comes up. If the panel asks you to turn on the bot,
-   that only means no version is published yet; the connection is already online.
-5. With the Harness running, go to **Events & Callbacks** → **Event Configuration**, set the subscription
+3. Put the App ID and App Secret into **Apps** → **Feishu / Lark** and save. If the panel asks you to turn on
+   the bot, that only means no version is published yet; the connection is already online.
+4. With the Harness running, go to **Events & Callbacks** → **Event Configuration**, set the subscription
    mode to **Receive events through persistent connection** and save. The console only accepts this while
    a connection is online.
-6. **Add Events** → `im.message.receive_v1`.
-7. **Version Management & Release** → create a version whose availability includes the people who will
+5. **Add Events** → `im.message.receive_v1`.
+6. **Version Management & Release** → create a version whose availability includes the people who will
    use it, and publish (an admin may need to approve).
-8. In Feishu, open a chat with the bot (search for the app, or use **Open in Feishu** in the panel) and
-   send the pairing code. For a group, add the bot to the group and @ it.
+
+```json
+{"scopes":{"tenant":["im:message.p2p_msg:readonly","im:message.group_at_msg:readonly","im:message:send_as_bot","im:message.reactions:write_only","contact:contact.base:readonly","contact:user.base:readonly","im:chat:readonly","im:message:readonly"],"user":[]}}
+```
+
+</details>
 
 Use an app made for this team only: when several programs connect with the same App ID, Feishu hands each
 message to just one of them.
@@ -595,14 +609,10 @@ it opens keeps your own words and that context, with the chat's ids for a bot th
 Open Platform app, so the bot doing the work knows what "this" means. Those messages are often written by people
 you did not pair (colleagues in the group): what they wrote then goes to the bots' model and into `tickets.json`,
 as it would if you pasted it in yourself. It is only read when a paired person's message points at it (a reply, a
-topic, a forward); the permissions are the switch, so leave `im:message:readonly` off to keep it out, and let the
+topic, a forward); the permissions are the switch, so remove `im:message:readonly` under **Permissions & Scopes** to keep it out, and let the
 people in a group with the bot know. Chat history you forward on its own also goes with
 the task you open from your next message ("summarize this"), sent within ten minutes. Without the permissions above
 the message goes on as before, and the Harness log says which permission to add.
-
-```json
-{"scopes":{"tenant":["im:message.p2p_msg:readonly","im:message.group_at_msg:readonly","im:message:send_as_bot","im:message.reactions:write_only","contact:contact.base:readonly","contact:user.base:readonly","im:chat:readonly","im:message:readonly"],"user":[]}}
-```
 
 ### Slack
 
