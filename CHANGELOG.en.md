@@ -5,6 +5,13 @@
 What changed in each version of Bots, newest first, and what to do after upgrading. Bots tells you when a new
 version is out ([Updates](README.en.md#updates)).
 
+## 0.20.2 — 2026-11-27
+
+- **Feishu is set up with an Agent-type app.** Create the app in the developer console with the Agent type (智能体):
+  the bot, its scopes and the long connection for messages come set up, so you copy the App ID and App Secret in and
+  save, with no scopes to add, events to subscribe or versions to publish. An existing custom app still works; its
+  steps are folded away in the README. See [Feishu / Lark](README.en.md#feishu--lark).
+
 ## 0.20.1 — 2026-11-27
 
 - **Files can be dropped on the message box.** Images are attached as before; another file is referenced by its
