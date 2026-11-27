@@ -3770,9 +3770,9 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         afterList(row).length
           ? h(
               'span',
-              { 'data-dsh-bots-need-after': afterList(row).map((x) => x.ref || x.id).join(','), style: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: TINY, color: row.afterStuck ? C.warn : C.muted, minWidth: 0 } },
+              { 'data-dsh-bots-need-after': afterList(row).map((x) => x.ref || x.id).join(','), 'data-error': row.afterError ? true : undefined, title: row.afterError ? str(row.afterError) : undefined, style: { display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: TINY, color: row.afterStuck || row.afterError ? C.warn : C.muted, minWidth: 0 } },
               Icon.clock(11),
-              h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.afterStuck ? t('afterStuck', { refs: afterRefs(row, true) }) : t('afterWaiting', { refs: afterRefs(row) })),
+              h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, row.afterError ? t('afterFailed', { reason: str(row.afterError) }) : row.afterStuck ? t('afterStuck', { refs: afterRefs(row, true) }) : t('afterWaiting', { refs: afterRefs(row) })),
             )
           : null,
         h(
@@ -3837,8 +3837,12 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         children ?? null,
       );
     }
-    /** The person files a card (Bots 0.12): a title, what it is about, its project, and who takes it, now or later. */
-    function CardForm({ t, bots, primaryId, projects, project, cards = [], toast, onClose, onCreated }) {
+    /**
+     * The person files a card (Bots 0.12): a title, what it is about, its project, and who takes it, now or later.
+     * Images and files go with it as with a message: pasted, dropped or picked, and files of the project's folder
+     * (the dispatcher's without one) or anywhere by full path.
+     */
+    function CardForm({ t, bots, primaryId, projects, project, cards = [], env = null, toast, onClose, onCreated }) {
       const [title, setTitle] = useState('');
       const [description, setDescription] = useState('');
       const [pid, setPid] = useState(project && project !== 'none' ? project : '');
@@ -3846,17 +3850,22 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       const [busy, setBusy] = useState(false);
       // A card that starts once another is done (Bots 0.13).
       const [after, setAfter] = useState('');
+      const att = useAttachments(t, toast);
+      const dropper = useImageDrop(att);
       const afterCard = cards.find((r) => r.id === after) ?? null;
       const front = bots.find((b) => b.id === primaryId) ?? null;
       const mates = bots.filter((b) => b.id !== primaryId);
+      const blocked = busy || att.busy || !title.trim();
       const submit = (start) => {
-        if (busy || !title.trim()) return;
+        if (blocked) return;
         setBusy(true);
-        void postJson('needs/create', { title: title.trim(), description, projectId: pid, assignee: start ? who : '', start, ...(after && start ? { after: [after] } : {}) })
+        const attached = { ...(att.images.length ? { images: att.images.map((i) => i.id) } : {}), ...(att.files.length ? { files: att.files } : {}) };
+        void postJson('needs/create', { title: title.trim(), description, projectId: pid, assignee: start ? who : '', start, ...(after && start ? { after: [after] } : {}), ...attached })
           .then((r) => {
             if (r && r.ok !== false) {
               if (r.startError) toast(t('cardNotStarted', { reason: r.startError }), 'error');
               else toast(start ? (after ? t('cardQueued', { ref: afterCard ? afterCard.ref || str(afterCard.title) : '' }) : t('cardStarted')) : t('cardFiled'));
+              att.clear();
               onCreated?.(r);
               onClose();
             } else toast(r?.reason || t('actionFailed'), 'error');
@@ -3873,8 +3882,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           footer: [
             h(Btn, { key: 'c', onClick: onClose }, t('cancel')),
             // Waiting for another card is To do already: one button, which says when it starts.
-            after ? null : h(Btn, { key: 'l', disabled: busy || !title.trim(), onClick: () => submit(false), 'data-dsh-bots-card-later': true }, t('cardLater')),
-            h(Btn, { key: 's', kind: 'primary', disabled: busy || !title.trim() || !front, onClick: () => submit(true), 'data-dsh-bots-card-start': true }, afterCard ? t('cardStartAfter', { ref: afterCard.ref || str(afterCard.title) }) : t('cardStart')),
+            after ? null : h(Btn, { key: 'l', disabled: blocked, onClick: () => submit(false), 'data-dsh-bots-card-later': true }, t('cardLater')),
+            h(Btn, { key: 's', kind: 'primary', disabled: blocked || !front, onClick: () => submit(true), 'data-dsh-bots-card-start': true }, afterCard ? t('cardStartAfter', { ref: afterCard.ref || str(afterCard.title) }) : t('cardStart')),
           ],
         },
         h(
@@ -3892,7 +3901,18 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             },
           }),
         ),
-        h(Field, { label: t('cardDescription'), hint: t('cardDescriptionHint') }, h(TextArea, { value: description, rows: 6, maxLength: 20000, placeholder: t('cardDescriptionPlaceholder'), 'data-dsh-bots-card-description': true, onChange: (e) => setDescription(e.target.value) })),
+        h(Field, { label: t('cardDescription'), hint: t('cardDescriptionHint') }, h(TextArea, { value: description, rows: 6, maxLength: 20000, placeholder: t('cardDescriptionPlaceholder'), 'data-dsh-bots-card-description': true, onChange: (e) => setDescription(e.target.value), onPaste: dropper.onPaste })),
+        h(
+          Field,
+          { label: t('cardAttachments'), hint: t('cardAttachmentsHint') },
+          h(
+            'div',
+            { className: 'dshb-composer', 'data-dsh-bots-card-attachments': true, ...dropper.box },
+            h(AttachStrip, { t, att }),
+            h(FilePicker, { t, att, env, scope: `card=1${pid ? `&project=${encodeURIComponent(pid)}` : ''}`, attr: 'card', full: true }),
+            h('div', { style: { display: 'flex', alignItems: 'center', gap: 4 } }, h(AttachButton, { t, att, attr: 'card', size: 30 }), h(FileButton, { t, att, attr: 'card', size: 30 })),
+          ),
+        ),
         h(
           'div',
           { style: { display: 'flex', gap: 12, flexWrap: 'wrap' } },
@@ -4245,7 +4265,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           ),
         ),
         h('div', { className: 'dshb-scroll', style: { flex: 1, padding: '16px 24px 28px' } }, body),
-        creating ? h(CardForm, { t, bots, primaryId, projects, project: filter, cards: all.filter((r) => r.status !== 'done'), toast, onClose: () => setCreating(false), onCreated: () => (void reload(), void refreshState()) }) : null,
+        creating ? h(CardForm, { t, bots, primaryId, projects, project: filter, env, cards: all.filter((r) => r.status !== 'done'), toast, onClose: () => setCreating(false), onCreated: () => (void reload(), void refreshState()) }) : null,
         managing ? h(ProjectsModal, { t, projects, env, toast, onClose: () => setManaging(false), onChanged: () => (void reloadProjects(), void reload()) }) : null,
         confirm
           ? h(Confirm, {
@@ -4319,6 +4339,11 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       const waits = afterList(v);
       const waitIds = waits.map((x) => x.id);
       const saveAfter = (ids, startWith) => void post('save', { after: ids, ...(startWith !== undefined ? { startWith } : {}) }, t('cardSaved'));
+      // What it was filed with; before it is handed out, one can be taken off (a file moved since keeps it from starting).
+      const shownImages = (Array.isArray(v.images) ? v.images : []).filter((i) => i && typeof i.id === 'string');
+      const shownFiles = (Array.isArray(v.files) ? v.files : []).filter((f) => f && typeof f.path === 'string');
+      const dropFile = (path) => void post('save', { files: shownFiles.filter((f) => f.path !== path).map((f) => f.path) }, t('cardSaved'));
+      const dropImage = (id) => void post('save', { images: shownImages.filter((i) => i.id !== id).map((i) => i.id) }, t('cardSaved'));
       return h(
         'div',
         { 'data-dsh-bots-need-detail': v.id, 'data-status': v.status, style: { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } },
@@ -4423,7 +4448,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             v.status === 'todo'
               ? h(
                   Section,
-                  { title: t('cardAfter'), hint: waits.length ? (v.afterStuck ? t('afterStuckHint') : t('afterHint')) : t('afterNoneHint') },
+                  { title: t('cardAfter'), hint: waits.length ? (v.afterError ? t('afterFailedHint', { reason: str(v.afterError) }) : v.afterStuck ? t('afterStuckHint') : t('afterHint')) : t('afterNoneHint') },
                   h(
                     'div',
                     { 'data-dsh-bots-need-after-edit': v.id, style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' } },
@@ -4471,6 +4496,40 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
                     : v.description
                       ? h('div', { 'data-dsh-bots-need-description': true, style: { fontSize: FONT, minWidth: 0 } }, h(Clamp, { t, text: str(v.description), lines: 12 }))
                       : h('div', { style: { fontSize: SMALL, color: C.faint } }, t('cardNoDescription')),
+                )
+              : null,
+            shownImages.length || shownFiles.length
+              ? h(
+                  Section,
+                  { title: t('cardAttachments') },
+                  startable
+                    ? h(
+                        'div',
+                        { className: 'dshb-attach', 'data-dsh-bots-need-attachments': shownImages.length + shownFiles.length },
+                        shownImages.map((img) =>
+                          h(
+                            'div',
+                            { key: img.id, className: 'dshb-attach-item', 'data-dsh-bots-need-image': img.id, title: str(img.name) || img.id },
+                            h('img', { src: img.url, alt: str(img.name) }),
+                            h('button', { type: 'button', className: 'dshb-attach-x', title: t('removeImage'), 'aria-label': t('removeImage'), disabled: busy, 'data-dsh-bots-need-image-remove': img.id, onClick: () => dropImage(img.id) }, Icon.close(10)),
+                          ),
+                        ),
+                        shownFiles.map((f) =>
+                          h(
+                            'span',
+                            { key: f.path, className: 'dshb-fileref', 'data-dsh-bots-need-file': f.path, title: f.path },
+                            h('span', { style: { display: 'inline-flex', flex: 'none', color: C.muted } }, Icon.file(12)),
+                            h('span', { className: 'dshb-fileref-name' }, baseName(str(f.name) || f.path)),
+                            h('button', { type: 'button', className: 'dshb-fileref-x', title: t('removeFile'), 'aria-label': t('removeFile'), disabled: busy, 'data-dsh-bots-need-file-remove': f.path, onClick: () => dropFile(f.path) }, Icon.close(10)),
+                          ),
+                        ),
+                      )
+                    : h(
+                        'div',
+                        { 'data-dsh-bots-need-attachments': shownImages.length + shownFiles.length, style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+                        h(MessageImages, { t, images: shownImages, max: 120 }),
+                        h(MessageFiles, { files: shownFiles }),
+                      ),
                 )
               : null,
             v.via === 'board' && asks.length === 0
@@ -5103,7 +5162,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
     function FilePicker(props) {
       return props.att.picking ? h(FilePickerList, props) : null;
     }
-    function FilePickerList({ t, att, scope, attr, env }) {
+    function FilePickerList({ t, att, scope, attr, env, full: fullPaths = false }) {
       const [q, setQ] = useState('');
       const settled = useDebounced(q, 200).trim();
       // A cleared box asks at once (as when another folder is chosen): the old words are not searched there.
@@ -5123,8 +5182,9 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       }, [scope, asked, dir]);
       const close = () => att.setPicking(false);
       const full = att.files.length >= MAX_ATTACH;
-      // A file of the conversation's folder is referenced by its path there, one elsewhere by its full path.
-      const refOf = (path) => (found?.elsewhere ? `${str(found.root).replace(/[\\/]+$/, '')}/${path}` : path);
+      // A file of the conversation's folder is referenced by its path there, one elsewhere by its full path
+      // (every one, with `full`: a new card's folder changes with its project).
+      const refOf = (path) => (found?.elsewhere || fullPaths ? `${str(found.root).replace(/[\\/]+$/, '')}/${path}` : path);
       const canPick = typeof env?.pickDirectory === 'function' && env.canPickDirectory?.() !== false;
       const pickDir = () => {
         setPickError('');
@@ -8873,19 +8933,26 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       const [lead, setLead] = useState('');
       const [busy, setBusy] = useState(false);
       const [confirm, setConfirm] = useState(false);
+      // Bots picked that are in another team move to this one: the person says so first, seeing which and from where.
+      const [moving, setMoving] = useState(false);
       const custom = !team || Boolean(team.custom);
       const valid = custom ? name.trim() !== '' : true;
       const label = team ? pick(team.name, lang) || id : '';
+      const moves = team ? [] : candidates.filter((b) => members.includes(b.id) && str(b.team));
       const toggle = (botId) => {
         setMembers((cur) => (cur.includes(botId) ? cur.filter((x) => x !== botId) : [...cur, botId]));
         if (lead === botId) setLead('');
       };
-      const save = () => {
-        if (!valid || busy) return;
+      const save = (confirmed = false) => {
+        if (!valid || busy) return undefined;
+        if (moves.length && !confirmed) {
+          setMoving(true);
+          return undefined;
+        }
         setBusy(true);
         const fields = { name: name.trim(), tagline: tagline.trim(), color };
         const req = team ? postJson('teams/update', { id: team.id, ...fields }) : postJson('teams/create', { ...fields, members, ...(lead ? { lead } : {}) });
-        Promise.resolve(req)
+        return Promise.resolve(req)
           .then((r) => {
             if (r?.ok && r.team) {
               if (!team) toast(t('teamCreated', { team: pick(r.team.name, lang) }));
@@ -8906,6 +8973,34 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
       if (confirm) {
         return h(Confirm, { t, title: t('deleteTeamTitle', { team: label }), body: t('deleteTeamBody', { n: (team?.members ?? []).length }), confirmLabel: t('deleteTeam'), onConfirm: remove, onClose: () => setConfirm(false) });
       }
+      if (moving) {
+        return h(Confirm, {
+          t,
+          title: t('teamMoveTitle', { n: moves.length }),
+          body: h(
+            'div',
+            { 'data-dsh-bots-team-moves': moves.length, style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+            h('div', null, t('teamMoveBody', { team: name.trim() })),
+            h(
+              'div',
+              { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+              moves.map((b) =>
+                h(
+                  'div',
+                  { key: b.id, 'data-dsh-bots-team-move': b.id, 'data-lead': b.lead || undefined, style: { display: 'flex', alignItems: 'center', gap: 8, color: C.primary } },
+                  h(Avatar, { avatar: b.avatar, name: b.name || b.handle, size: 20 }),
+                  h('span', { style: { fontWeight: 600, flex: 'none' } }, b.name || `@${b.handle}`),
+                  h('span', { style: { color: C.muted, fontSize: SMALL, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, b.lead ? t('teamMoveLeadFrom', { team: teamNameOf(b.team, lang) }) : t('teamMoveFrom', { team: teamNameOf(b.team, lang) })),
+                ),
+              ),
+            ),
+            moves.some((b) => b.lead) ? h('div', { style: { fontSize: SMALL } }, t('teamMoveLeadNote')) : null,
+          ),
+          confirmLabel: t('teamMoveConfirm'),
+          onConfirm: () => save(true),
+          onClose: () => setMoving(false),
+        });
+      }
       return h(
         Modal,
         {
@@ -8916,7 +9011,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
           footer: [
             team && custom ? h(Btn, { key: 'd', kind: 'ghost', className: 'dshb-btn dshb-btn-ghost dshb-btn-danger', icon: Icon.trash(13), onClick: () => setConfirm(true), style: { marginRight: 'auto' }, 'data-dsh-bots-team-delete': team.id }, t('deleteTeam')) : null,
             h(Btn, { key: 'c', onClick: onClose }, t('cancel')),
-            h(Btn, { key: 's', kind: 'primary', disabled: !valid || busy, onClick: save, 'data-dsh-bots-team-save': team?.id ?? 'new' }, busy ? t('saving') : team ? t('save') : t('createTeam')),
+            h(Btn, { key: 's', kind: 'primary', disabled: !valid || busy, onClick: () => save(), 'data-dsh-bots-team-save': team?.id ?? 'new' }, busy ? t('saving') : team ? t('save') : t('createTeam')),
           ],
         },
         h(
@@ -8953,6 +9048,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
                     h(Avatar, { avatar: b.avatar, name: b.name || b.handle, size: 22 }),
                     h('span', { style: { fontWeight: 600, flex: 'none' } }, b.name || `@${b.handle}`),
                     h('span', { style: { color: C.faint, fontSize: TINY, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, b.team ? `@${b.handle} · ${teamNameOf(b.team, lang)}` : `@${b.handle}`),
+                    // Picked from another team: it moves (its lead too, which leaves that team without one).
+                    b.team && members.includes(b.id) ? h('span', { 'data-dsh-bots-team-member-moves': b.id, style: { marginLeft: 'auto', flex: 'none', color: C.warn, fontSize: TINY } }, b.lead ? t('teamMemberMovesLead') : t('teamMemberMoves')) : null,
                   ),
                 ),
               ),
@@ -9854,6 +9951,14 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         teamColor: 'Colour',
         teamMembers: 'Bots in it',
         teamMembersHint: "A bot already in another team moves to this one. You can add more later in a bot's Profile.",
+        teamMemberMoves: 'Moves here',
+        teamMemberMovesLead: 'Moves here, leaves its team without a lead',
+        teamMoveTitle: 'Move bots from other teams?',
+        teamMoveBody: 'These bots are in other teams now. Creating “{team}” moves them to it:',
+        teamMoveFrom: 'from {team}',
+        teamMoveLeadFrom: 'leads {team} now',
+        teamMoveLeadNote: 'A team whose lead moves has no lead until you choose one in a bot’s Profile.',
+        teamMoveConfirm: 'Move them and create',
         teamLeadPick: 'Lead',
         teamNoLead: 'No lead',
         teamLeadPickHint: "The dispatcher hands the team's work to its lead, which brings in the others.",
@@ -10613,6 +10718,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         cardTitlePlaceholder: 'What you want, in a line',
         cardDescription: 'Description',
         cardDescriptionHint: 'Details, links, what done looks like. The bot that takes it reads all of it.',
+        cardAttachments: 'Images and files',
+        cardAttachmentsHint: 'Paste or drop screenshots, or pick files on this computer (from the project’s folder, or the dispatcher’s without one). They go with the card when it starts; files are referenced by path, not copied.',
         cardDescriptionPlaceholder: 'Optional',
         cardNoDescription: 'No description.',
         cardProject: 'Project',
@@ -10680,6 +10787,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         afterStuck: 'Waits for {refs}, which will not get done',
         afterHint: 'It starts by itself once these are done, and reads what they delivered.',
         afterStuckHint: 'One of them was dropped or did not get done: it will not start by itself. Start it, or wait for others.',
+        afterFailed: 'Did not start: {reason}',
+        afterFailedHint: 'They are done, but it did not start: {reason}. Once that is fixed it starts by itself; or start it now.',
         afterNoneHint: 'Make it start by itself once other cards are done.',
         afterAdd: 'Wait for a card…',
         afterRemove: 'Do not wait for it',
@@ -11011,6 +11120,14 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         teamColor: '颜色',
         teamMembers: '成员',
         teamMembersHint: '已在别的团队的 bot 会移到这个团队。之后也可以在 bot 的资料页里加入。',
+        teamMemberMoves: '将移到这里',
+        teamMemberMovesLead: '将移到这里，原团队会没有负责人',
+        teamMoveTitle: '把 {n} 个 bot 从原团队移过来？',
+        teamMoveBody: '这些 bot 现在属于别的团队，创建「{team}」后会移到这个团队：',
+        teamMoveFrom: '来自{team}',
+        teamMoveLeadFrom: '现在是{team}的负责人',
+        teamMoveLeadNote: '负责人被移走的团队会暂时没有负责人，可以在 bot 的资料页里重新指定。',
+        teamMoveConfirm: '移过来并创建',
         teamLeadPick: '负责人',
         teamNoLead: '不设负责人',
         teamLeadPickHint: '调度员把团队的活交给负责人，由它叫其他成员来做。',
@@ -11759,6 +11876,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         cardTitlePlaceholder: '一句话说清楚要什么',
         cardDescription: '描述',
         cardDescriptionHint: '细节、链接、做到什么程度算完成。接手的 bot 会全部读到。',
+        cardAttachments: '图片和文件',
+        cardAttachmentsHint: '可以粘贴或拖入截图，也可以选这台电脑上的文件（默认在项目的文件夹里找，没有项目时在调度员的文件夹里找）。卡片开始时一起交出去；文件只给路径，不复制。',
         cardDescriptionPlaceholder: '可选',
         cardNoDescription: '没有描述。',
         cardProject: '项目',
@@ -11826,6 +11945,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         afterStuck: '在等 {refs}，但它做不成了',
         afterHint: '这些卡都完成后，它会自动开始，并读到它们交付的结果。',
         afterStuckHint: '其中有卡被取消或没做成，它不会自动开始了。可以手动开始，或者改等别的卡。',
+        afterFailed: '没能开始：{reason}',
+        afterFailedHint: '等的卡都完成了，但它没能开始：{reason}。处理好以后它会自动开始，也可以现在手动开始。',
         afterNoneHint: '设置成等别的卡完成后自动开始。',
         afterAdd: '等一张卡……',
         afterRemove: '不等它了',

@@ -60,7 +60,7 @@ import { isLiveSubscriber, isPanelThread, isTopicThread, panelThreadKey, panelTo
 import { cleanDay, createMemory, dreamBotPrompt, dreamTeamPrompt, isProjectScope, KINDS as MEMORY_KINDS, languageOf, looksSecret, parseJsonReply, reflectionPrompt, searchTickets } from './lib/memory.mjs';
 import { createTopics, rotationReason } from './lib/topics.mjs';
 import { createImages, IMAGE_TYPES, idList, imageId, imageNoteText, imageView, MAX_MESSAGE_IMAGES, refsInContent } from './lib/images.mjs';
-import { fileNoteText, fileRefs, pickerFiles, resolveFiles } from './lib/files.mjs';
+import { fileNoteText, fileRefs, MAX_MESSAGE_FILES, pickerFiles, resolveFile, resolveFiles } from './lib/files.mjs';
 import { chatMessageRef, createDiscussions, forkPoint, messageRef, seqByTime } from './lib/discussions.mjs';
 import { API_KINDS, CODEX_ROUTE, PI_SCOPE, ROUTE_PREFIX, codexAuthFile, createCodexSync, detectLogins, discoverModels, endpointView, keyRefFor, profileFor, readCodexAuth, codexCredential } from './lib/models.mjs';
 
@@ -645,6 +645,10 @@ export function apply(ctx, config, deps = {}) {
   function ticketFolder(t) {
     const p = t.projectId ? projects.get(t.projectId) : undefined;
     return p?.dir ? p.dir : botFolder(t.projectId ? undefined : store.get(t.botId));
+  }
+  /** The folder a card filed on the board names its files in: its project's (`p`), else the dispatcher's. */
+  function cardFolder(p) {
+    return p?.dir ? p.dir : botFolder(store.primary());
   }
 
   /** Place a new session in the bot's configured folder, or in the shared Bots workspace. */
@@ -1773,7 +1777,7 @@ export function apply(ctx, config, deps = {}) {
    * in the dispatcher's chat as the person's message, the task's answers show there too (a reply
    * to the card's message goes to the task), and the dispatcher hears of it without waking.
    */
-  async function openCardTicket(n, bot, after = []) {
+  async function openCardTicket(n, bot, after = [], { images: refs = [], files = [] } = {}) {
     const front = store.primary();
     if (!front || !isRouter(front)) throw new Error('only a dispatcher with teammates hands a card to one of them');
     if (bot.id === front.id) throw new Error('the dispatcher takes no tasks: hand the card to it without naming a bot');
@@ -1793,10 +1797,13 @@ export function apply(ctx, config, deps = {}) {
       threads: [threadRecordOf({ threadKey: key, kind: 'panel' })],
       projectId: n.projectId ?? '',
       board: true,
+      // What the card was filed with: its assignment carries them.
+      images: refs.map((r) => r.attachmentId),
+      files,
     });
     needs.addTicket(n.id, t.id, []);
     // No `sid`: it went to no conversation of the dispatcher's; it shows as queued until the task starts.
-    store.log({ id: newPanelId(), from: 'user', to: bot.id, chat: front.id, kind: 'user', text: body, thread: key, ticket: t.id, need: n.id });
+    store.log({ id: newPanelId(), from: 'user', to: bot.id, chat: front.id, kind: 'user', text: body, thread: key, ticket: t.id, need: n.id, ...imageIdsOf(refs), ...filesOf(files) });
     const ref = cardRefOf(n);
     void notifyRequester(t, `[Board] The user handed card ${ref ? `${ref} ` : ''}"${n.title}" (need ${n.id}) to @${bot.handle} themselves: task ${t.id}. @${bot.handle} answers them in your chat; this needs no reply.`, { mode: 'inject', key: `board:${t.id}` });
     quietFailures.add(t.id);
@@ -1819,13 +1826,15 @@ export function apply(ctx, config, deps = {}) {
     if (!front) throw new Error('hire a bot first: a card needs someone to work on it');
     const bot = assignee ? resolve(assignee) : null;
     const cur = needs.get(n.id);
+    // What it was filed with goes along; a file gone since keeps it where it is, and says which.
+    const attached = cardAttachments(cur);
     const before = { todo: cur.todo, closed: cur.closed, snapshot: cur.snapshot, botId: cur.botId, archivedAt: cur.archivedAt };
     const had = cur.tickets.length;
     // The dispatcher of now keeps it (it lists the needs it named), even when the card was filed under another.
     needs.start(n.id, { botId: front.id });
     try {
-      if (bot && bot.id !== front.id) await openCardTicket(needs.get(n.id), bot, after);
-      else await userSend(front, cardText(n), { card: needs.get(n.id), cardAfter: after });
+      if (bot && bot.id !== front.id) await openCardTicket(needs.get(n.id), bot, after, attached);
+      else await userSend(front, cardText(n), { card: needs.get(n.id), cardAfter: after, ...attached });
     } catch (error) {
       // Not handed out: as the person left it (in To do, or dropped).
       if ((needs.get(n.id)?.tickets.length ?? 0) === had) needs.restore(n.id, before);
@@ -1835,15 +1844,53 @@ export function apply(ctx, config, deps = {}) {
   }
 
   /**
+   * The images and file references a card goes out with (`{images, files}`, as `userSend` takes them):
+   * the images whose reference is still known, and every file, looked up again. A file that was moved or
+   * deleted since the card was filed is refused, by its name.
+   */
+  function cardAttachments(n) {
+    const refs = idList(n?.images).map((id) => images.get(id)).filter(Boolean);
+    const files = fileRefs(n?.files);
+    const gone = files.filter((f) => {
+      try {
+        resolveFile(workdir, f.path);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    if (gone.length) {
+      const one = gone.length === 1;
+      throw new Error(`${one ? 'a file' : `${gone.length} files`} of this card ${one ? 'was' : 'were'} moved or deleted (${gone.map((f) => f.name).join(', ')}): put ${one ? 'it' : 'them'} back, or remove ${one ? 'it' : 'them'} from the card`);
+    }
+    return { images: refs, files };
+  }
+  /**
+   * The files a card is saved with (`paths`, as `needs/<ref>/save` takes them): one it has already stays as
+   * it is, so a file moved since can still be taken off; a new one is checked as a message's is, in the
+   * folder of project `p` (the dispatcher's without one).
+   */
+  function savedCardFiles(n, paths, p) {
+    const own = new Map(fileRefs(n?.files).map((f) => [f.path, f]));
+    const list = [...new Set((Array.isArray(paths) ? paths : paths === undefined || paths === null || paths === '' ? [] : [paths]).map((r) => (typeof r === 'string' ? r.trim() : r)))];
+    if (list.length > MAX_MESSAGE_FILES) throw new Error(`a card carries at most ${MAX_MESSAGE_FILES} file references`);
+    return fileRefs(list.map((rel) => own.get(rel) ?? resolveFile(cardFolder(p), rel)));
+  }
+
+  /**
    * A card the person filed on the board (Bots 0.12): a need with their title and description, under
    * a project when they chose one, handed out at once (`start`, to `assignee` or the dispatcher) or
-   * kept in To do. Returns `{need, startError?}`: a card that could not be handed out is kept, in To do.
+   * kept in To do. `images` (attachment ids) and `files` (paths in the card's folder, `cardFolder`, or
+   * full ones) go with it, checked as a message's are. Returns `{need, startError?}`: a card that could
+   * not be handed out is kept, in To do.
    */
-  async function createCard({ title, description = '', projectId = '', assignee = '', start = true, after = [] } = {}) {
+  async function createCard({ title, description = '', projectId = '', assignee = '', start = true, after = [], images: imageIds = [], files: paths = [] } = {}) {
     const name = clampNeedTitle(title);
     if (!name) throw new Error('a card needs a title');
     if (String(description ?? '').length > MAX_DESCRIPTION) throw new Error(`a description is at most ${MAX_DESCRIPTION} characters`);
     const p = projectId ? projectByRef(projectId) : undefined;
+    const refs = imageRefs(imageIds);
+    const files = resolveFiles(cardFolder(p), paths);
     const front = store.primary();
     if (start && !front) throw new Error('hire a bot first: a card needs someone to work on it');
     const at = nowMs();
@@ -1856,6 +1903,8 @@ export function apply(ctx, config, deps = {}) {
       description,
       ...(p ? { projectId: p.id, number: projects.take(p.id) } : {}),
       todo: true,
+      images: refs.map((r) => r.attachmentId),
+      files,
     });
     // One that waits for other cards stays in To do, and starts by itself, with `assignee`, once they are done (Bots 0.13).
     if (Array.isArray(after) ? after.length : String(after ?? '').trim()) {
@@ -2312,8 +2361,9 @@ export function apply(ctx, config, deps = {}) {
   // Cards in To do whose wait is over start by themselves: after any change of a need, and at each upkeep.
   let waitingTimer = null;
   const startingNow = new Set();
-  // A card whose start failed is tried again at the next upkeep, not at once (its restore is a change too).
-  const startFailedAt = new Map();
+  // A card whose start failed is tried again at the next upkeep, not at once (its restore is a change too);
+  // the board says why it has not started (`afterError`), and a change the person saves tries it again at once.
+  const startFailed = new Map();
   const RETRY_WAITING_MS = 4 * 60_000;
   function scheduleWaiting() {
     if (waitingTimer) return;
@@ -2326,15 +2376,15 @@ export function apply(ctx, config, deps = {}) {
   async function startWaiting() {
     for (const n of needs.list()) {
       if (!n.todo || !n.after?.length || startingNow.has(n.id)) continue;
-      if (nowMs() - (startFailedAt.get(n.id) ?? 0) < RETRY_WAITING_MS) continue;
+      if (nowMs() - (startFailed.get(n.id)?.at ?? 0) < RETRY_WAITING_MS) continue;
       const { state, list } = afterState(n);
       if (state !== 'ready') continue;
       startingNow.add(n.id);
       try {
         await startCard(n, n.startWith ?? '', { after: list });
-        startFailedAt.delete(n.id);
+        startFailed.delete(n.id);
       } catch (error) {
-        startFailedAt.set(n.id, nowMs());
+        startFailed.set(n.id, { at: nowMs(), reason: String(error?.message ?? error) });
         ctx.logger?.warn?.(`bots: card ${cardRefOf(n) || n.id} did not start after the cards it waited for: ${error?.message ?? error}`);
       } finally {
         startingNow.delete(n.id);
@@ -2392,12 +2442,17 @@ export function apply(ctx, config, deps = {}) {
       ...(n.archivedAt ? { archivedAt: n.archivedAt } : {}),
     };
   }
-  /** What a card in To do waits for, as the board shows it (Bots 0.13): `after` and, when it will not start by itself, `afterStuck`. */
+  /**
+   * What a card in To do waits for, as the board shows it (Bots 0.13): `after` and, when it will not start by
+   * itself, `afterStuck`; when its wait is over but it did not start, `afterError` (why: a file of it gone, say).
+   */
   function afterRow(n) {
     const { state, list } = afterState(n);
+    const failed = state === 'ready' ? startFailed.get(n.id) : undefined;
     return {
       after: list.map(({ need: x, status }) => ({ id: x.id, title: x.title, status, ...(cardRefOf(x) ? { ref: cardRefOf(x) } : {}) })),
       ...(state === 'stuck' ? { afterStuck: true } : {}),
+      ...(failed ? { afterError: failed.reason } : {}),
       ...(n.startWith ? { startWith: n.startWith } : {}),
     };
   }
@@ -2407,7 +2462,16 @@ export function apply(ctx, config, deps = {}) {
     const results = list
       .flatMap((t) => t.reports.filter((r) => r.status === 'done').map((r) => ({ at: r.at, botId: t.botId, ticket: t.id, text: clip(String(r.text ?? ''), 4000).text })))
       .sort((a, b) => a.at - b.at);
-    return { ...needRow(n), ...(n.description ? { description: n.description } : {}), asks: n.asks, tickets: list.map(ticketRow), results };
+    return {
+      ...needRow(n),
+      ...(n.description ? { description: n.description } : {}),
+      // What it was filed with (images whose reference is still known).
+      ...(n.images?.length ? { images: imageViews(n.images) } : {}),
+      ...(n.files?.length ? { files: n.files } : {}),
+      asks: n.asks,
+      tickets: list.map(ticketRow),
+      results,
+    };
   }
   const needOr404 = (id) => {
     const n = needByRef(id);
@@ -6338,15 +6402,19 @@ export function apply(ctx, config, deps = {}) {
         return { ok: true, sessionId: sent.sessionId, ...(sent.message ? { message: sent.message } : {}) };
       },
     },
-    // The files the composer's picker offers: those of the folder a bot's conversation (`bot`) or a task
-    // (`ticket`) works in, of another folder the person chose (`dir`), or of the folder a typed full path
-    // names. A bot is not tied to a folder: a message references any file, one elsewhere by its full path.
+    // The files the composer's picker offers: those of the folder a bot's conversation (`bot`), a task
+    // (`ticket`) or a new card (`card`, with its `project` when it has one) works in, of another folder the
+    // person chose (`dir`), or of the folder a typed full path names. A bot is not tied to a folder: a
+    // message references any file, one elsewhere by its full path.
     files: {
       get: (url) => {
         const t = url.searchParams.get('ticket') ? tickets.get(url.searchParams.get('ticket')) : undefined;
-        const bot = t ? undefined : store.get(url.searchParams.get('bot') ?? '');
-        if (!t && !bot) return { ok: false, reason: 'no such bot or task' };
-        return { ok: true, ...pickerFiles(t ? ticketFolder(t) : botFolder(bot), { q: url.searchParams.get('q') ?? '', dir: url.searchParams.get('dir') ?? '' }) };
+        const card = !t && url.searchParams.has('card');
+        const bot = t || card ? undefined : store.get(url.searchParams.get('bot') ?? '');
+        if (!t && !bot && !card) return { ok: false, reason: 'no such bot or task' };
+        const p = card && url.searchParams.get('project') ? projects.get(url.searchParams.get('project')) : undefined;
+        const root = t ? ticketFolder(t) : card ? cardFolder(p) : botFolder(bot);
+        return { ok: true, ...pickerFiles(root, { q: url.searchParams.get('q') ?? '', dir: url.searchParams.get('dir') ?? '' }) };
       },
     },
     // An image the person attached in the panel (Bots 0.17), stored before the message that carries it is sent.
@@ -6672,7 +6740,7 @@ export function apply(ctx, config, deps = {}) {
       post: async (rest, body) => {
         // A card filed on the board (Bots 0.12).
         if (rest.length === 1 && rest[0] === 'create') {
-          const { need, startError } = await createCard({ title: body.title, description: body.description, projectId: String(body.projectId ?? ''), assignee: String(body.assignee ?? ''), start: body.start !== false, after: body.after ?? [] });
+          const { need, startError } = await createCard({ title: body.title, description: body.description, projectId: String(body.projectId ?? ''), assignee: String(body.assignee ?? ''), start: body.start !== false, after: body.after ?? [], images: body.images, files: body.files });
           return { ok: true, ...needView(need), ...(startError ? { startError } : {}) };
         }
         const [id, action] = rest;
@@ -6701,10 +6769,19 @@ export function apply(ctx, config, deps = {}) {
             // What it waits for (Bots 0.13), checked before anything changes too.
             if (body.after !== undefined) checkAfter(n, body.after);
             if (body.startWith !== undefined) startWithOf(body.startWith);
+            // The images and files it goes out with: those given replace its own.
+            const attach = {
+              ...(body.images !== undefined ? { images: imageRefs(body.images).map((r) => r.attachmentId) } : {}),
+              ...(body.files !== undefined ? { files: savedCardFiles(n, body.files, body.projectId !== undefined ? p : projectOfNeed(n)) } : {}),
+            };
             if (body.title !== undefined) needs.rename(n.id, body.title);
             if (body.description !== undefined) needs.describe(n.id, body.description);
+            if (body.images !== undefined || body.files !== undefined) needs.attach(n.id, attach);
             if (body.projectId !== undefined) fileNeed(needs.get(n.id), p);
+            // A waiting card that did not start is tried again now: what kept it may be what changed.
+            startFailed.delete(n.id);
             if (body.after !== undefined || body.startWith !== undefined) waitCard(needs.get(n.id), { after: body.after, startWith: body.startWith });
+            scheduleWaiting();
             return { ok: true, ...needView(needs.get(n.id)) };
           }
           // Put a card that is done or dropped away, off the board; and back.

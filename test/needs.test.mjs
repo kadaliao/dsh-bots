@@ -234,3 +234,26 @@ test('a card links its GitHub issue, on github.com or a GitHub Enterprise server
     { kind: 'github', ref: 'acme/site#13' },
   ]);
 });
+
+test('a card keeps the images and file references it was filed with, through a reload; attach replaces them', () => {
+  const dir = dirOf();
+  const needs = createNeeds(dir);
+  const n = needs.create({
+    title: 'Fix the login page',
+    images: ['img-abc123', 'img-abc123', 'bad id!', 'img-def456'],
+    files: [{ path: '/work/docs/plan.md', name: 'docs/plan.md' }, { path: 'relative.md' }, { path: '/work/docs/plan.md', name: 'docs/plan.md' }, { path: '/work/notes.txt' }],
+  });
+  assert.deepEqual(n.images, ['img-abc123', 'img-def456']);
+  assert.deepEqual(n.files, [{ path: '/work/docs/plan.md', name: 'docs/plan.md' }, { path: '/work/notes.txt', name: '/work/notes.txt' }]);
+  const again = createNeeds(dir).get(n.id);
+  assert.deepEqual([again.images, again.files], [n.images, n.files]);
+  // A card filed without any has none.
+  const plain = needs.create({ title: 'Plain' });
+  assert.deepEqual([plain.images, plain.files], [undefined, undefined]);
+  // Replaced field by field: the one left out stays.
+  assert.deepEqual(needs.attach(n.id, { files: [{ path: '/work/notes.txt', name: 'notes.txt' }] }).files, [{ path: '/work/notes.txt', name: 'notes.txt' }]);
+  assert.deepEqual(needs.get(n.id).images, ['img-abc123', 'img-def456']);
+  const bare = needs.attach(n.id, { images: [], files: [] });
+  assert.deepEqual([bare.images, bare.files], [undefined, undefined]);
+  assert.equal(needs.attach('nmissing1', { images: [] }), undefined);
+});

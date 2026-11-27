@@ -241,7 +241,7 @@ TeamView = { id, name: {en, zh}, tagline: {en, zh}, color, template?: string, cu
 
 | Method | Path | Body | Answer |
 |---|---|---|---|
-| POST | `teams/create` | `{ name, tagline? \| description?, color?: '#rrggbb', members?: (id \| @handle)[], lead?: id }` | `{ ok, team: TeamView, teams: TeamView[] }`. The id comes from the name (`amazon-us`; `team`, `team-2` … for a name without Latin letters). Refused: no name, a name a team here has (any case), the dispatcher as a member, a `lead` not among `members`, a colour that is not hex. Members in another team move to it |
+| POST | `teams/create` | `{ name, tagline? \| description?, color?: '#rrggbb', members?: (id \| @handle)[], lead?: id }` | `{ ok, team: TeamView, teams: TeamView[] }`. The id comes from the name (`amazon-us`; `team`, `team-2` … for a name without Latin letters). Refused: no name, a name a team here has (any case), the dispatcher as a member, a `lead` not among `members`, a colour that is not hex. Members in another team move to it (the panel lists them, with their team and whether they lead it, and creates the team only once the person confirms) |
 | POST | `teams/update` | `{ id, name?, tagline? \| description?, color? }` | `{ ok, team, teams }`. On a hired template team an empty value gives the template's back; a team of your own keeps a name |
 | POST | `teams/delete` | `{ id }` | `{ ok, unteamed: string[], teams }`: your own teams only; their bots stay, in no team, and its lead no longer leads |
 
@@ -861,6 +861,8 @@ Need = {
   after?: string[],              // need ids it waits for, ≤ 10, not its own
   startWith?: string,            // the bot that starts it when its wait is over; none: the dispatcher
   links?: { kind: 'github', ref, url? }[],   // ≤ 10
+  images?: string[],             // attachment ids of the images it was filed with, ≤ 10
+  files?: FileRef[],             // the files it was filed with, ≤ 10 (see File references)
   createdAt, updatedAt,
   closed?: { at, by: 'user' | 'dispatcher', outcome?: 'done' },   // outcome 'done': marked done; else dropped
   archivedAt?: number,           // the person put it away: off the board, never pruned; none: on the board
@@ -873,10 +875,10 @@ NeedRow = {
   done, total, failed?, stalled?, waiting?: string[] /* task ids asking the person */,
   bots: string[], via?, who?, threadKey?, asked? /* the first message, ≤ 200 */,
   latest?: { status, at, botId, ticket, preview },   // a question waiting for the person first, else the latest report
-  after?: { id, title, status, ref? }[], afterStuck?: true, startWith?,   // a card in To do only
+  after?: { id, title, status, ref? }[], afterStuck?: true, afterError?: string, startWith?,   // a card in To do only
   createdAt, updatedAt, endedAt?, closed?, archivedAt?,
 }
-NeedView = NeedRow & { asks, description?, tickets: TicketRow[], results: { at, botId, ticket, text }[] /* done reports */ }
+NeedView = NeedRow & { asks, description?, images?: Image[] /* those whose reference is still known */, files?: FileRef[], tickets: TicketRow[], results: { at, botId, ticket, text }[] /* done reports */ }
 ```
 
 Status (first match): closed → `done` with `outcome: 'done'`, else `stopped`; `todo` with no task → `todo`; a task in
@@ -910,12 +912,12 @@ a chat message's source line.
 |---|---|---|---|
 | GET | `needs` | `?status=&project=<id>\|none&q=&from=&to=&archived=1\|all&limit=&offset=` (`limit` ≤ 300, default 100). `q`: words (≤ 10, any case) that must all be in the card's reference, title or description. `from`, `to`: ms; cards with `from` ≤ `createdAt` < `to`, either may be left out (the panel sends the first day and the day after the last one, at midnight of the person's calendar). `archived`: `1` the archived cards only, `all` those too; left out, only the cards on the board | `{ items: NeedRow[], next_offset }`, newest change first. Every filter applies before the page is cut |
 | GET | `needs/<ref>` | `ref`: an id or a card (`OPC-12`, any case) | `NeedView`; a merged id answers with the need that took it |
-| POST | `needs/create` | `{ title, description?, projectId? (id or key), assignee? (a bot), start? (default true), after?: (id \| ref)[] }` | `{ ok, ...NeedView, startError? }`: a card that could not be handed out is kept, in To do, and `startError` says why. With `after`: kept in To do, waiting, `assignee` as `startWith` |
-| POST | `needs/<ref>/start` | `{ assignee? }` | `{ ok, ...NeedView }`; only a card in `todo` or `stopped` (`this card is under way already: …`); starts a waiting card at once |
+| POST | `needs/create` | `{ title, description?, projectId? (id or key), assignee? (a bot), start? (default true), after?: (id \| ref)[], images?: string[], files?: string[] }` | `{ ok, ...NeedView, startError? }`: a card that could not be handed out is kept, in To do, and `startError` says why. With `after`: kept in To do, waiting, `assignee` as `startWith`. `images` (attachment ids from `POST images`) and `files` (paths in the card's folder, see [Starting a card](#starting-a-card), or full paths) are checked as a message's are, before anything is filed |
+| POST | `needs/<ref>/start` | `{ assignee? }` | `{ ok, ...NeedView }`; only a card in `todo` or `stopped` (`this card is under way already: …`); starts a waiting card at once. A file of the card that is gone keeps it as it was: `a file of this card was moved or deleted (<name>): put it back, or remove it from the card` |
 | POST | `needs/<ref>/done` | `{}` | `{ ok, ...NeedView }`: open tasks ended `done` by the user, the card closed with `outcome: 'done'` |
 | POST | `needs/<ref>/rename` | `{ title }` | `{ ok, ...NeedView }` |
 | POST | `needs/<ref>/drop` | `{}` | `{ ok, ...NeedView }`: open tasks stopped by the user |
-| POST | `needs/<ref>/save` | `{ title?, description?, projectId? ('' for none), after?: (id \| ref)[] ([] for none), startWith?: bot ('' for the dispatcher) }` | `{ ok, ...NeedView }`. Another project gives it the next number there, and the tasks it opens from then on work on that project (tasks it has keep theirs). Everything is checked before anything changes |
+| POST | `needs/<ref>/save` | `{ title?, description?, projectId? ('' for none), after?: (id \| ref)[] ([] for none), startWith?: bot ('' for the dispatcher), images?: string[], files?: string[] ([] for none: they replace the card's) }` | `{ ok, ...NeedView }`. Another project gives it the next number there, and the tasks it opens from then on work on that project (tasks it has keep theirs). In `files`, the full path of a file the card has keeps it as it is (one moved since can still be taken off); any other is checked as a message's is. Everything is checked before anything changes |
 | POST | `needs/<ref>/archive` | `{}` | `{ ok, ...NeedView }` with `archivedAt`; only a card that is `done` or `stopped` (`only a card that is done or dropped can be archived: …`). One already archived stays as it is |
 | POST | `needs/<ref>/unarchive` | `{}` | `{ ok, ...NeedView }`: back on the board. One that is not archived stays as it is |
 
@@ -924,6 +926,14 @@ a chat message's source line.
 A card the person files gets `origin: { via: 'board', who: 'the user' }`, `asks: [{ at, text: title + '\n\n' +
 description, via: 'board' }]` and `botId` = the dispatcher. A start that reaches no one puts back what it changed (To
 do, dropped, the dispatcher that named it).
+
+A card's images and files go out with it, whichever way it starts (at once, from To do, or when its wait is over):
+to the dispatcher as the panel message's images and file block, so the work it hands out in that turn carries them;
+to one teammate as the ticket's `images` and `files`, which its assignment carries. The card's folder, which its
+`files` paths are in (`GET files?card=1&project=<id>?`), is its project's, else the dispatcher's. Its files are looked
+up again at each start: one moved or deleted since refuses the start, the card stays as it was, and the panel lets the
+person take it off the card (`needs/<ref>/save` with `files`). The panel's picker names a new card's files by their
+full paths, so a file picked stays the same file when the person changes the card's project.
 
 - **To the dispatcher** (no `assignee`, or the dispatcher, or a lone dispatcher): `send` as a panel message whose text
   is the title and description, logged with `need: <id>` (`GET messages` adds `card`). The router reads, after
@@ -966,7 +976,9 @@ unknown card (`no card X to wait for`), itself, more than 10, and a loop (`OPC-3
 would wait for each other`). Its wait is `ready` when every card it waits for is `done` (a merged one is followed, a
 pruned one dropped from the list), `stuck` when one is `stopped` or `failed` (`afterStuck`: it does not start by
 itself), else waiting. After any change of a need (on the next tick) and at every upkeep, each ready card starts with
-`startWith` as the assignee; a start that fails is tried again 4 minutes later at the earliest. It starts as a card
+`startWith` as the assignee; a start that fails is tried again 4 minutes later at the earliest, or at once when the
+person saves the card (`needs/<ref>/save`), and until it starts its row says why (`afterError`, the start's error, such
+as a file of it gone). It starts as a card
 does with, for each card it waited for, `It waited for OPC-11 ("…"), which is done now: "<its latest done report, ≤
 600 characters>"` (and `… (bot_recall need/OPC-11 reads all of it)` when cut): below its text for a task of one bot, or
 on the lines after the `[Card …]` header, which then reads `… to start once other cards were done; it starts now.`
@@ -1272,10 +1284,11 @@ FileRef = { path: string /* the real, absolute path */, name: string /* for show
 
 | Method | Path | Query | Answer |
 |---|---|---|---|
-| GET | `files` | `?bot=<id>&q=<words>&dir=<folder>?` or `?ticket=<id>&q=<words>&dir=<folder>?` | `{ ok, root, files: string[], truncated, elsewhere }`: the files of the folder `root` whose path has every word of `q` (any case), as paths inside it, at most 50, the closest first (the name itself matches, then the one nearer the top). Entries with a leading dot, `node_modules` and symbolic links are not listed; a search stops after 20 000 entries or 12 levels (`truncated`, also when more than 50 match). `elsewhere`: `root` is not the conversation's folder, so a file listed is referenced by its full path (`root` + `/` + the path listed). `{ ok: false, reason: 'no such bot or task' }` |
+| GET | `files` | `?bot=<id>&q=<words>&dir=<folder>?`, `?ticket=<id>&q=<words>&dir=<folder>?` or `?card=1&project=<id>?&q=<words>&dir=<folder>?` | `{ ok, root, files: string[], truncated, elsewhere }`: the files of the folder `root` whose path has every word of `q` (any case), as paths inside it, at most 50, the closest first (the name itself matches, then the one nearer the top). Entries with a leading dot, `node_modules` and symbolic links are not listed; a search stops after 20 000 entries or 12 levels (`truncated`, also when more than 50 match). `elsewhere`: `root` is not the conversation's folder, so a file listed is referenced by its full path (`root` + `/` + the path listed). `{ ok: false, reason: 'no such bot or task' }` |
 
 - `root` is the conversation's folder: for `bot`, the bot's configured folder (`workdirs`), else the shared Bots
-  workspace; for `ticket`, its project's folder, else its bot's (as its Session is placed). With `dir` (a full path,
+  workspace; for `ticket`, its project's folder, else its bot's (as its Session is placed); for `card` (a new card),
+  the project's folder, else the dispatcher's. With `dir` (a full path,
   `~` is the home folder) it is that folder. When `q` is a full path (`/…`, `~/…`) it is the folder that path names,
   whatever `dir` says: the longest part of the path that is a folder, searched by the words that follow it
   (`~/docs/plan` lists the files of `~/docs` with `plan` in their path); a `q` that is the full path of a file
