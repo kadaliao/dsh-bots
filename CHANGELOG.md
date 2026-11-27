@@ -5,6 +5,19 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 What changed in each version of Bots, newest first, and what to do after upgrading. Bots tells you when a new
 version is out ([Updates](README.md#updates)).
 
+## 0.20.0 — 2026-11-27
+
+- **A new card takes screenshots and files.** In **New card**, paste, drop or pick screenshots, and pick files of this
+  computer: the project's folder first (the dispatcher's without a project), or any other folder. Files are named by
+  path, not copied. However the card starts, now, from To do or once the cards it waits for are done, they go out with
+  it, to the dispatcher, who passes them on, or straight to the teammate. A card in To do lists them on its page, where
+  one can be taken off. If a file is moved or deleted before the card starts, the card stays in To do and says which;
+  a card that waits for others says so on the board too, and tries again as soon as you save it. See
+  [The board](README.md#the-board-every-request-as-a-card-filed-under-projects).
+- **Moving bots between teams asks first.** When a new team takes bots that are in other teams, the panel lists them,
+  the team each comes from and whether it leads it, before the team is made; go back and nothing moves. See
+  [Hire a whole team in one click](README.md#hire-a-whole-team-in-one-click).
+
 ## 0.19.0 — 2026-11-26
 
 - **Find a card on the board.** Below the project chips, filter the cards by when they were filed (**Today**, **This
