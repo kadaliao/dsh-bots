@@ -1,604 +1,454 @@
 # Bots
 
-English | [简体中文](README.zh-CN.md) · [Changelog](https://github.com/kadaliao/dsh-bots/blob/main/CHANGELOG.md)
+简体中文 | [English](README.en.md) · [更新日志](https://github.com/kadaliao/dsh-bots/blob/main/CHANGELOG.md)
 
-Grok-style bots inside DeepSeek Harness: a team of bots that work together. Each bot has its own **avatar,
-persona, model, skills, abilities, apps, scheduled tasks and memory**, and its own conversation. Bots **message each
-other**, and one of them, the **dispatcher**, splits the work, hands it out, follows up and reports back. Each piece
-of work handed out is a **task** that the bot works on in a conversation of its own, so one bot can work on several
-at once. The chat with a bot reads like a chat app: the bot on the left, you on the right. To go on about one
-message, reply to it: your reply quotes it, and the bot answers in a **thread**, where it sees that message and what
-came before it, and nothing said in the chat since.
+把 Grok bot 搬进 DeepSeek Harness：一支能互相协作的 bot 团队。每个 bot 有自己的**头像、人设、模型、技能、能力、应用、定时任务和记忆**，
+也有自己的会话；bot 之间**私信协作**，其中一个是**调度员**，负责拆解需求、分派、跟进、汇报。
+分派出去的每件工作都是一个**任务**，bot 在专门的会话里做，所以一个 bot 可以同时做好几件事。
+和 bot 聊天就像在聊天软件里：bot 在左，你在右。想针对哪条消息接着聊，就回复它：你的回复引用那条消息，
+bot 在它的**讨论串**里回答，只看得到这条消息和它之前的内容，不会把后来聊的别的事混进来。
 
-It is built for two situations:
+它适合两种场景：
 
-- **A one-person company (OPC)**: you run a business alone and need a whole staff — engineering, growth,
-  customers, finance — plus an operations lead who keeps the week's plan, and a dispatcher who briefs you every
-  morning.
-- **Work that is naturally split between roles**: code needs a builder, a tester and a reviewer; content
-  needs a researcher, a writer and a designer; research needs a skeptic.
+- **一人公司（OPC）**：一个人经营业务，需要一整个「员工团队」——研发、增长、客户、财务，再加一个定本周计划的运营负责人，和每天早上给你简报的调度员。
+- **需要分工协作的工作**：开发要有人写、有人测、有人审；内容要有人调研、有人写、有人做图；研究要有人挑刺。
 
-![Chat](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-chat.png)
+![聊天](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/chat.png)
 
-## Hire a whole team in one click
+## 一键雇用一支团队
 
-Open the Bots panel (sidebar, or `/bots`), pick a team template and click **Hire this team**:
+打开 Bots 面板（左侧栏或 `/bots`），挑一个团队模板，点「雇用这个团队」：
 
-| Team | Members (lead first) | Scheduled tasks |
+| 团队 | 成员（负责人排第一） | 定时任务 |
 | --- | --- | --- |
-| **One-person company** | Compass (operations lead), Forge (engineer), Echo (growth), Harbor (customers), Ledger (finance) | Compass: weekday 08:30 inbox sweep, Monday numbers and market pulse. Your dispatcher: weekday 09:00 morning brief, Friday 17:30 weekly review |
-| **Software squad** | Builder, Tester, Review | — |
-| **Content studio** | Quill (editor), Scout (research), Pixel (design) | Your dispatcher: Monday topic planning |
-| **Research desk** | Memo (writer), Analyst, Market, Skeptic | — |
+| **一人公司** | Compass 运营、Forge 工程师、Echo 增长、Harbor 客户、Ledger 财务 | Compass：工作日 08:30 收件箱巡检、周一财务数据和市场脉搏。调度员：工作日 09:00 早间简报、周五 17:30 周复盘 |
+| **研发小队** | Builder 开发、Tester 测试、Review 审查 | — |
+| **内容工作室** | Quill 主编、Scout 研究员、Pixel 设计 | 调度员：周一选题会 |
+| **研究台** | Memo 主笔、Analyst 分析师、Market 市场、Skeptic 怀疑者 | — |
 
-There is one dispatcher, the front desk, and it hands out the work of every team you hire. Hire a second team and it
-joins the same dispatcher; its bots are listed under their team, so the dispatcher sees who belongs together. With many
-teams, click a team's name in the list to fold it to one line (its faces, who is at work, its questions); this browser
-remembers it, and the bot you have open stays in sight.
+调度员只有一个，是总前台，你雇的每个团队都由它分派工作。再雇一个团队，也是接到同一个调度员后面；它看到的名单按团队分组，
+分得清谁和谁是一伙的。团队多了，点列表里的团队名就能把它收成一行（显示成员头像、谁在忙、有几个问题等你回答）；
+这个浏览器会记住收起状态，你正打开的 bot 始终留在列表里。
 
-Every team has a **lead**, listed first: the bot that owns the team's result and brings in the others.
-Builder leads the software squad (it plans a goal as small changes, checks the plan with you, and has Tester and
-Review check each change), Quill the content studio (Scout researches, Pixel draws), Memo the research desk (Analyst
-and Market dig, Skeptic checks the draft). The dispatcher hands such a team's work to its lead, never past it, unless
-you name a member yourself ("ask @tester to reproduce it"); the lead's teammates report back to the lead, and the lead
-answers you once. In the one-person company, whose four roles (product, growth, customers, money) are peers, Compass
-leads: its own work is the week's plan (`plan.md`) and the follow-through, it hands each part to the role that fits, and
-it runs the team's routines. You can still message any bot directly, a lead or a member. Change who leads
-on a bot's **Profile** (**Leads …**), or ask the dispatcher to; a team has one lead at most.
+每个团队都有一个**负责人**，排在第一个：对团队的成果负责、把队友叫进来的那个 bot。研发小队由 Builder 负责（它把目标拆成小改动，
+和你确认计划，每个改动请 Tester 测试、Review 审查），内容工作室由 Quill 负责（Scout 调研、Pixel 配图），研究台由 Memo
+负责（Analyst 和 Market 调研、Skeptic 核查草稿）。调度员把这种团队的活交给负责人，不会绕过它，除非你自己点名某个成员
+（「让 @tester 先复现一下」）；队友的结果交回负责人，负责人汇总后答复你一次。一人公司的四个职能（产品、增长、客户、财务）
+是平级的，由 Compass 运营负责：它自己的活是本周计划（`plan.md`）和跟进落地，把每一块交给对口的角色，并跑团队的例行任务。
+你随时可以直接找任何一个 bot，负责人或成员都行。在 bot 的 **资料** 页
+（**…负责人** 开关）可以换负责人，也可以让调度员去改；一个团队最多一个负责人。
 
-The dispatcher is an ordinary bot: rename it, give it another avatar or persona on its **Profile**, or make another
-bot the dispatcher from its own Profile. It leads no team.
+调度员是个普通 bot：可以在它的 **资料** 页改名字、换头像和人设，也可以在别的 bot 的资料页把它设为调度员。它不负责任何一个团队。
 
-A bot you make yourself joins a team you hired with **Team** in **New bot**, or later on its **Profile** (or ask the
-dispatcher: `bot_create` and `bot_update` take `team`). In a team with a lead, the dispatcher hands its work to the
-lead, which brings the new bot in. A bot moved to another team, or out of one, no longer leads; the dispatcher
-belongs to no team.
+你自己新建的 bot，可以在 **新建 Bot** 里用 **所属团队** 放进已雇的团队，之后也能在它的 **资料** 页改（或者让调度员改：
+`bot_create` 和 `bot_update` 都有 `team`）。团队有负责人时，调度员把活交给负责人，由负责人叫这个 bot 来做。
+bot 调到别的团队或退出团队后就不再是负责人；调度员不属于任何团队。
 
-**Your own teams.** A team doesn't have to be a template. **New bot → New team** makes one with your name, a
-description and a colour, the bots in it and its lead (say "Amazon US" with an operator, a sourcer and a supply-chain
-bot); it shows in the list under its name, before it has any bots, and the bots read the roster under that name and
-description. A bot you pick that is in another team moves to the new one: before the team is made, the panel lists
-those bots, the team each comes from and whether it leads it, and you confirm or go back. A hired template team can be renamed, described and recoloured the same way (the pencil on its header in
-the list, or **Your teams** on the Teams page); clear a field to get the template's back. Your own teams can be deleted
-there: their bots stay, in no team. Leads work the same in your teams as in hired ones.
+**自己的团队。** 团队不一定要从模板来。**新建 Bot → 新建团队** 可以建一个自己的团队：起名字、写简介、选颜色，挑好成员和负责人
+（比如「亚马逊美国站」，配运营、选品、供应链三个 bot）。还没有成员时它也会出现在列表里；bot 看到的花名册也用你起的名字和简介。
+勾选的 bot 如果已经在别的团队，会被移到新团队：创建前面板会列出这些 bot、各自原来的团队、是不是那边的负责人，你确认后才创建，也可以返回修改。
+已雇的模板团队同样能改名、改简介、换颜色（列表里团队标题上的铅笔，或团队页的 **你的团队**），把某一项清空就恢复模板原来的。
+自己建的团队可以在那里删除，里面的 bot 会留下，只是不属于任何团队。负责人机制和已雇团队一样。
 
-Hiring:
+雇用时会：
 
-- creates the bots with bilingual personas, in your UI language;
-- gives each member **the skills already installed in your Harness** that fit its role (deep-research,
-  last30days, xlsx, high-signal-review, …), skipping and reporting any you don't have;
-- imports role skills from [anthropics/skills](https://github.com/anthropics/skills) (webapp-testing,
-  frontend-design, brand-guidelines, …) with their scripts;
-- adds the apps the role needs (GitHub, Stripe, HubSpot, …), whose keys you fill in later;
-- gives the lead the team's own routines (the one-person company's inbox sweep, numbers and market pulse), and your
-  dispatcher the ones that reach across teams (the morning brief, the weekly review, the studio's topic planning; one
-  it already has by that name is not added twice), and makes a dispatcher, Atlas, when you have none;
-- offers to send the dispatcher a kickoff message, so the team starts working right away.
+- 按界面语言创建双语人设的 bot（中文界面就是中文团队）；
+- 给每个成员挂上**你这台 Harness 里已有的技能**（如 deep-research、last30days、xlsx、high-signal-review），没装的跳过并告诉你；
+- 从 [anthropics/skills](https://github.com/anthropics/skills) 导入岗位需要的技能（如 webapp-testing、frontend-design、brand-guidelines），连同脚本一起下载；
+- 加上岗位需要的应用（GitHub、Stripe、HubSpot 等），Key 之后在「应用」页补；
+- 团队自己的例行任务交给负责人（一人公司的收件箱巡检、每周数据、市场脉搏），跨团队的交给你的调度员（早间简报、周复盘、内容工作室的本周选题；
+  它已有同名任务的不重复添加），还没有调度员时新建一个 Atlas；
+- 最后可以一键把「开场任务」发给调度员，团队就开始干活了。
 
-![Team templates](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-teams.png)
+![团队模板](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/teams.png)
 
-## An example (one-person company)
+## 一段示例（一人公司）
 
-> **You → Atlas**: We release the new version next week. Organise it.
+> **你 → Atlas**：下周要发布新版本，帮我安排一下。
 >
-> **Atlas → Compass**: The founder releases the new version next week; plan it with the team.
+> **Atlas → Compass 运营**：创始人下周发布新版本，请和团队排好计划。
 >
-> **Compass → Forge**: Fix the three P1 bugs before release, review your own diff, merge by Wednesday.
+> **Compass → Forge 工程师**：发布前请把 3 个 P1 bug 修完并自审，周三前合并。
 >
-> **Compass → Echo**: Draft the launch post and three social posts in the founder's voice, by Thursday.
+> **Compass → Echo 增长**：起草发布公告和三条社媒短帖，用创始人的口吻，周四给我。
 >
-> **Compass → Ledger**: For a week after release, check new subscriptions and refunds daily; flag anything odd.
+> **Compass → Ledger 财务**：发布后一周每天看一下新订阅和退款，有异常立刻告诉我。
 >
-> **Forge → Compass**: The three bugs are fixed, tests pass, PR merged.
+> **Forge → Compass**：3 个 bug 已修，测试通过，PR 已合并。
 >
-> **Compass → You**: This week: bugs cleared; launch draft for your review tomorrow. Decision needed: do we raise the price?
+> **Compass → 你**：本周进展：bug 已清零；公告草稿明天给你审；需要你决定：新版本定价是否上调。
 
-Bots answer in the language you write in, so the same team works in Chinese and English
-([中文示例](README.zh-CN.md#一段示例一人公司)).
+bot 默认用你说话的语言回答；中文提问就是中文协作。
 
-Atlas, the dispatcher, hands the one-person company's work to its lead, Compass, which puts the week's plan in
-`plan.md` and splits it. Each message from Compass to a teammate opens a task, the three tasks run at the same time,
-Forge's message is the report on its task, and Compass answers you once.
+调度员 Atlas 把一人公司的活交给它的负责人 Compass，由 Compass 把本周计划写进 `plan.md` 并拆分。Compass 发给三位队友的每条消息都开了一个任务，
+三个任务同时进行；Forge 那句话是它对自己任务的汇报，最后由 Compass 统一答复你。
 
-## The chat: reply to a message to open a thread
+## 聊天：回复一条消息，就开一个讨论串
 
-The chat with a bot reads like a chat app such as Feishu: the bot's messages on the left, yours on the right, in the
-order they were said. Send as many messages as you like, whenever you like. To go on about one message, reply to it,
-the way a chat app quotes a reply: the reply shows at the end of the chat with that message quoted on top, and the
-bot answers in that message's **thread**.
+和 bot 聊天就像在飞书这样的聊天软件里：bot 说的在左，你说的在右，按说话的先后排下来，想发几条发几条、什么时候发都行。
+想针对某条消息接着聊，就像聊天软件里的引用回复那样回复它：回复出现在对话最后，顶上引用着那条消息，bot 在这条消息的**讨论串**里回答。
 
 <!-- screenshot: a quoted reply in the chat -->
 
-- **What you send shows at once**, marked **Queued** until the bot takes it.
-- **Send images.** Click the image button, paste a screenshot, or drop images on the box (PNG, JPEG, WebP or GIF, up
-  to ten a message; images alone are a message too). The bot sees them, when its model reads images, and the chat
-  shows them; click one to see it large. Work handed on takes them along: a task the dispatcher opens from your
-  message carries its images, and so do a lead's sub-tasks. The thread box and a task's message box take images too.
-- **Point at any file of your computer.** Click the file button beside the image button and search by file name or
-  path (hidden files, `node_modules` and links are not listed); pick up to ten files, which show above the box until
-  you send (**×** removes one). The search starts in the folder the conversation works in (on a task's page the
-  task's: its project's folder, when it has one), and a bot is not tied to that folder: paste or type a full path
-  (`/…` or `~/…`) to look in the folder it names (`~/docs/plan` lists the files of `~/docs` with `plan` in their
-  path; the full path of a file gives that file, a hidden one too), or click **Another folder…** to choose a folder in
-  Harness's folder dialog and search there. The bot gets each file's full path and reads it with its own file tools
-  and permissions, so nothing is uploaded or copied. Work handed on keeps the reference: a teammate working in another
-  folder is pointed at the same file, not at a file of the same name in its own folder. A file that was moved or
-  deleted before you send is refused, saying so. Files can be dropped on the box too: images are attached as ever,
-  and another file is referenced by its full path when Harness tells the panel where it is; otherwise (a browser does
-  not tell a page where a dropped file is) the picker opens searching its name, and one click references it.
-- **Reply to any message.** Hover over a message and click **Reply**: it is quoted above the box (**×** or Esc drops
-  it), and what you send answers it. The bot answers in a conversation of its own, **forked from its conversation at
-  that message**: it sees that message and everything before it, and nothing the main chat said after it. So when
-  you come back to an older message a few turns later, the bot answers about that message instead of taking it as a
-  reply to the last one. When the message you reply to is your own, the answer the bot gave it then is part of what
-  the thread sees.
-- **Replies show in the chat, quoted.** Your reply quotes the message it answers; the bot's answer quotes your reply,
-  unless it is right under it. Click a quote to see the whole thread on its own beside the chat (over it on a
-  narrow screen), where you can go on too. A message with a thread has a small **N replies** link under it, with
-  **Replying…** while the bot answers there; the chat also shows the bot at work at its end.
-- **The main chat hears what was said in threads.** Since you read the replies in the chat, your next message
-  there comes to the bot with a short note of what was said in its threads since (who said what, under which
-  message), so it doesn't lose the thread of the conversation. A thread doesn't hear what the main chat said after
-  its message.
-- **Reply** to a message of a thread to go on in that thread (it quotes that message); threads don't nest. A thread
-  has no new topic: `/new` works in the main chat only.
-- **Replying to a task's message talks to that task.** Reply to a result or a question from the bot doing a task and
-  what you write goes straight to that task; the dispatcher only gets a note, which doesn't wake it, and the task's
-  later reports show in that thread. A task that is done but whose conversation isn't archived yet takes it and goes on.
-- **The dispatcher answers every message within a step or two**, because it doesn't do the work in its own
-  conversation: it hands it to the teammate that fits (the closest one when none fits exactly), never to itself, and
-  is free again at once. Two requests sent back to back run side by side, and neither is dropped for the other; a message that
-  continues something already under way is added to that task. In a thread it still only routes: a task it hands out
-  there reports back into the thread, and what you write later in the thread comes to it first, and it decides which
-  task it is for.
-- **The bot doing the work answers you itself**, where the request came from (the main chat or a thread), with the
-  whole result. Only when the dispatcher splits one request between several bots and has to put the results together
-  does it ask for their reports back and answer you itself.
-- A thread quiet for a day leaves the Harness sidebar; a new reply brings it back, and the thread goes on where it was.
+- **发出即显示。** 消息发出去立刻出现在对话里，bot 接手之前标着 **排队中**。
+- **可以发图片。** 点图片按钮选图，或者直接粘贴截图、把图片拖进输入框（PNG、JPEG、WebP、GIF，一条消息最多十张；只发图片不写字也行）。
+  bot 的模型能看图时就能看到；对话里显示缩略图，点开看大图。转出去的活会带上图片：调度员从你这条消息开出的任务会带着它的图片，
+  负责人分出去的子任务也一样。讨论串和任务页的输入框也能发图片。
+- **可以引用电脑上的任意文件。** 点图片按钮旁边的文件按钮，按文件名或路径搜索（隐藏文件、`node_modules` 和符号链接不列出），
+  一条消息最多选十个；选中的文件显示在输入框上方，发送前点 **×** 可以移除。搜索从这个对话所在的目录开始（任务页里是任务所在的目录；
+  任务属于某个项目时，就是项目的目录），但 bot 并不绑定在这个目录上：粘贴或输入完整路径（`/…` 或 `~/…`）就去它指的文件夹里找
+  （`~/docs/plan` 列出 `~/docs` 里路径含 `plan` 的文件；贴一个文件的完整路径就是这个文件，隐藏文件也行），或者点 **换个文件夹…**，
+  在 Harness 的文件夹选择框里选一个文件夹再搜。bot 拿到的是文件的完整路径，用它自己的文件工具和权限去读，不上传也不复制。
+  转出去的活会带上引用：队友在别的目录干活时，指向的还是你选的那个文件，不会变成它自己目录里的同名文件。
+  发送前文件被移走或删掉，消息会被拒绝并说明原因。
+  文件也可以拖进输入框：图片照常附上，其他文件要是 Harness 告诉了面板它的完整路径，就直接引用；否则（浏览器不会告诉页面拖入的文件在哪儿）
+  会打开文件列表，按这个文件名搜好，点一下就引用上了。
+- **回复任何一条消息。** 鼠标移到消息上点 **回复**，那条消息引用在输入框上方（点 **×** 或按 Esc 取消），发出去的话就是回复它的。
+  bot 回答时用的是从它的会话**在那条消息处分出来**的一段新会话：看得到那条消息和之前的内容，看不到主对话后来说的话。
+  所以隔了几轮再去回复一条旧消息，它答的就是那条消息，不会当成在接最后一句。回复的是你自己的消息时，bot 当时对它的回答也算在内。
+- **回复显示在对话里，带着引用。** 你的回复引用它回复的消息；bot 的回答引用你的回复，紧挨在下面时就不重复引用。
+  点引用，就在聊天旁边单独看这个讨论串的全部往来（窄屏时铺满），也可以在那里接着聊。有讨论串的消息下面有一个小小的 **N 条回复**，
+  bot 正在那里回答时显示 **正在回复…**，对话末尾也会显示它正在回答。
+- **主对话知道讨论串里说了什么。** 回复都显示在对话里，你也都看到了，所以你下一次在主对话里发消息时，bot 会先收到一段简短的提示，
+  说明这段时间各个讨论串里谁说了什么、回复的是哪条消息，不会接不上话。反过来，讨论串看不到它那条消息之后主对话说的话。
+- 回复讨论串里的某条消息，就是在那个讨论串里接着聊（会引用那条消息），不会再往下开。讨论串里没有新话题，`/new` 只在主对话里有用。
+- **回复任务的消息，就是在跟那个任务说话。** 回复做任务的 bot 发来的结果或提问，这句话直接交给那个任务，
+  调度员只收到一条提示，不会被唤醒；任务之后的汇报也显示在这个讨论串里。任务已完成但会话还没归档时，会接着做。
+- **调度员一两步之内就回应每一条消息**，因为活都交给队友：交给最合适的队友（没有正好对口的，就交给最接近的那个），
+  从不派给自己，然后马上空出来。连发两件事会同时推进，不会因为来了新消息就丢掉旧的；接着说某件进行中的事的消息，它会并进那个任务。
+  在讨论串里它也只调度：在那里交出去的任务，结果回到这个讨论串；你在讨论串里接着说的话仍然先到它这里，由它决定转给哪个任务。
+- **干活的 bot 直接回复你**，在请求来的地方（主对话或讨论串）给出完整结果。只有调度员把一件事拆给几个 bot、需要汇总结果时，
+  才会让汇报先回到它那里，再由它回复你。
+- 一天没有动静的讨论串，它的会话会从 Harness 侧栏收起来；再回复它就回来，接着原来的讨论串聊。
 
-## The board: every request as a card, filed under projects
+## 看板：每件事一张卡，按项目归档
 
-A **task** is a bot's view: one piece of work it took on. A **request** is yours: one thing you want. A request often
-takes several tasks (the dispatcher splits research between teammates, then hands the results to one who writes them
-up), and several messages (you ask, then add "include the UK in the Europe one", then ask how it is going). The
-**Requests** board shows each request as a card.
+**任务**是 bot 的视角：某个 bot 接下的一件活。**需求**是你的视角：你要的一件事。一个需求常常要好几个任务
+（调度员把调研拆给几个队友同时做，再交给一个汇总），也会跨好几条消息（先提，再补充「欧洲那份加上英国」，再问进度）。
+侧栏的 **需求** 是一块看板，每件事一张卡。
 
-![The board](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-board.png)
+![看板](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/board.png)
 
-- **The dispatcher restates it.** When it hands out the work, it names the request in one line, in your language,
-  saying what you get rather than who does it ("Q3 competitor pricing table (North America + Europe)", not "@scout
-  researches North American pricing"). Tasks for the same request count toward it, and what you add later joins it.
-  When the dispatcher did not restate one, the title is your own words, and the page says so.
-- **Its column comes from its tasks**: **To do** (filed for later, nobody took it yet), **In progress** (with how many
-  tasks are done and the latest word), **Waiting for you** (a task asks you something or cannot go on, or the work did not get done)
-  and **Done**. Dropped cards fold away below. A follow-up reopens the task, and the card is in progress again. You
-  don't move cards between columns by hand, except for two moves: drag a card from **To do** to **In progress** to
-  start it, or onto **Done** to mark it done (its tasks still under way are closed, after you confirm).
-- **File a card yourself**: **New card** takes a title, a description, a project and who takes it. Given to the
-  dispatcher (the default), the card arrives in its chat as your message, marked as the card, and the tasks it opens
-  for it count toward the card. Given to one teammate, it goes straight to that bot as a task, opened on the
-  dispatcher's behalf: the card shows in the dispatcher's chat with the bot's answers under it, a reply to it goes to
-  the task, and the dispatcher is told without being woken. **Add to To do** keeps it for later; **Start** on the
-  card's page (or a drag) hands it out then. Paste or drop screenshots into the card, or pick files of this computer
-  (the project's folder first, the dispatcher's without one; files are named by path, not copied): they go out with it
-  whenever it starts, to the dispatcher, who passes them on, or straight to the teammate. If a file is moved or
-  deleted before a card in To do starts, the card stays there and says which; take it off on the card's page.
-- **Projects** group cards and number them: a card filed under project `OPC` is `OPC-1`, `OPC-2`… (numbers are not
-  reused). A project has a **folder** and a **brief**. Its tasks work in the folder, which Harness adds as a workspace
-  (the same one when the folder is a workspace already); every task of the project reads the brief, and the project's
-  own memory ([Memory](#memory)). Without a folder its tasks work in the Bots workspace. **Choose folder…** opens the
-  folder dialog of Harness (the desktop app's); you can also type the path. A project's **GitHub repository** is
-  `owner/repo`, or the repository's address, on github.com or a GitHub Enterprise server. The dispatcher reads the list of projects and files a new request under one
-  when it clearly fits (`project` on `bot_send_message`); a sub-task works on its parent's project. Manage projects
-  with **Projects** on the board; filter the board by project with the chips on top. Removing a project keeps its
-  cards under no project. Its active tasks continue in their current folders. Queued tasks start in the same folder as
-  other tasks without a project. Moving a card to another project affects tasks opened after the move.
-- **Name a card in a message**: `OPC-12 add the UK too`, in the panel or a chat app. A message to the dispatcher
-  that starts with a card's reference goes straight to that card's task when it has one (as a reply to the task's
-  message does), and its answers come back where you wrote; the dispatcher gets a note without being woken. If the
-  task reports done before it reads your message, it stays open and answers that too; only then is the card done. A card
-  named anywhere else in a message (or one with several tasks) goes to the dispatcher, which reads what each named
-  card is, how far it got and its open tasks, and can start one in To do you name.
-- **A card can wait for others**: on its page (**Starts after**), in **New card**, or by asking the dispatcher ("do
-  OPC-12 after OPC-11"). It stays in To do and starts by itself once they are all done, with whoever you chose (the
-  dispatcher, or one teammate), and reads what they delivered. If one of them is dropped or not done, it does not
-  start by itself, and the board says so.
-- Open a card for its description, your own words (to check the restatement), the question waiting for you
-  (**Answer** opens its task), what was delivered and the tasks behind it; **Rename** it, edit its description, move it
-  to another project (it gets a number there), **Start** it, **Mark done**, or **Drop it** (its unfinished tasks
-  stop). A task's page links back to its card, and so does the card's message in the chat.
-- **Find a card**: below the project chips, pick when it was filed (**Today**, **This week** from Monday, **This
-  month**, **Last month**, or **Custom** with a first and a last day, the last one included) and type words to search
-  the cards' numbers, titles and descriptions. The filters work together, with the project too ("last month's cards of
-  `OPC` that mention a quote"), and reach every card, however old. **Clear filters** shows the whole board again; with
-  more cards than one page holds, **Load more** fetches the next ones.
-- **Archive what is finished**: a card that is done or dropped has **Archive** on its page. It leaves the board and
-  stays under **Archived** (the button on top of the board), with its number, tasks and results, where you search it
-  the same way, open it, and **Restore** it. Archived cards are kept for good, while of the other finished cards the
-  newest 500 are. A follow-up on an archived card, or starting it again, puts it back on the board.
-- When you say "forget that one", the dispatcher drops the request; when two turn out to be one, it merges them; when
-  it answered a card itself, without a task, it marks it done.
-- Only what you ask for is a request: work teammates ask each other for, and work a schedule starts, is not.
+- **调度员来归纳和转述。** 它分派工作时，用你的语言把这件事写成一句话，说你会得到什么，不说谁去做
+  （「Q3 竞品定价对比表（北美 + 欧洲）」，而不是「@scout 去查北美定价」）。同一件事的几个任务归在一起；
+  你接着补充或追问时，你的话也记到原来那件事上。它没有转述时，标题取自你的原话，并注明这一点。
+- **卡片在哪一列，由它的任务决定**：**待办**（留着以后做，还没交出去）、**进行中**（显示完成了几项和最新进展）、
+  **等你处理**（有任务在问你、做不下去了，或者没做成）、**已完成**；已取消的折在下面。你接着跟进让任务重开，卡片也回到进行中。
+  卡片不用手动挪列，只有两种拖法：从 **待办** 拖到 **进行中** 就开始；拖到 **已完成** 就标记完成（还在进行的任务会在你确认后关掉）。
+- **自己建卡**：点 **新建卡片**，填标题、描述、项目、交给谁。交给调度员（默认）时，卡片作为你的一条消息出现在它的聊天里，
+  并标明是哪张卡，它为这张卡开的任务都算在卡上。交给某个同事时，直接作为任务交给那个 bot，由插件替调度员开出：
+  卡片显示在调度员的聊天里，那个 bot 的回复跟在下面，回复这条卡片消息会直接送到任务里，调度员会收到通知但不会被唤醒。
+  **放进待办** 就先留着；之后在卡片页点 **开始**（或者拖一下）再交出去。建卡时可以粘贴或拖入截图，也可以选这台电脑上的文件
+  （先在项目的文件夹里找，没有项目就在调度员的文件夹里找；文件只给路径，不复制）。不管卡片什么时候开始，这些都会一起交出去：
+  交给调度员时由它转给接手的同事，直接交给同事时跟着任务走。待办里的卡片开始前如果文件被移走或删掉，卡片会留在待办并说明是哪个文件，
+  在卡片页把它去掉就行。
+- **项目**把卡片归在一起并编号：归到 `OPC` 项目的卡片叫 `OPC-1`、`OPC-2`……（编号不回收）。项目有 **目录** 和 **简介**：
+  它的任务在这个目录里工作，Harness 会把目录加为工作区（已经是工作区的就用原来那个）；项目的每个任务都会读到简介和项目自己的记忆（见[记忆](#记忆)）。
+  没设目录的项目，任务在 Bots 工作区里工作。**选择文件夹…** 会打开 Harness（桌面版）的文件夹选择框，也可以直接输入路径。
+  项目的 **GitHub 仓库** 写 `owner/repo` 或仓库地址，github.com 和 GitHub Enterprise 都可以。调度员能看到项目列表，新需求明显属于某个项目时会归进去（`bot_send_message` 的 `project`）；
+  子任务跟着父任务的项目走。在看板上点 **项目** 管理项目，用顶上的标签按项目筛选。删除项目时卡片保留，变成不归属项目；进行中的任务在原处接着做，
+  还在排队的任务按无项目任务选择工作目录。把卡片移到别的项目时，进行中的任务不动，之后新开的任务才属于新项目。
+- **在消息里提卡片编号**：比如 `OPC-12 加上英国`，在面板或聊天应用里都行。发给调度员的消息以卡片编号开头、而且那张卡有一个任务在做时，
+  消息直接送进那个任务（和回复任务的消息一样），回复也回到你说话的地方；调度员会收到通知，不会被唤醒。任务还没读到你的消息就报了完成时，
+  它不会结束，会接着回答这条消息，回答完卡片才算完成。编号出现在消息别处
+  （或者那张卡有好几个任务）时，消息交给调度员，它会看到提到的每张卡是什么、做到哪一步、有哪些进行中的任务，你点名的待办卡它也可以开始做。
+- **卡片可以等别的卡**：在卡片页的 **在这之后开始**、**新建卡片** 里设置，或者直接跟调度员说（「OPC-11 做完再做 OPC-12」）。
+  它会留在待办里，等那些卡都完成后自动开始，交给你选的人（调度员，或者某个同事），并读到它们交付的结果。
+  其中有卡被取消或没做成时，它不会自动开始，看板上会标出来。
+- 点开一张卡：描述、你的原话（用来核对转述有没有走样）、在等你回答的问题（点 **去回答** 到那个任务）、交付的结果、
+  背后的任务；还可以 **改标题**、改描述、移到别的项目（在那边重新编号）、**开始**、**标记完成**，或者 **不用做了**
+  （它下面还没完成的任务都会停下）。任务页和聊天里的卡片消息都能点回这张卡。
+- **筛选和搜索**：项目标签下面可以按卡片的创建时间筛选（**今天**、**本周**（从周一算起）、**本月**、**上月**，
+  或者 **自定义** 起止日期，结束那天整天都算），也可以输入关键词，搜卡片的编号、标题和描述。几个条件可以一起用，
+  和项目也能组合（比如「上个月 `OPC` 项目里提到报价的卡」），再早的卡片也搜得到。点 **清除筛选** 回到完整的看板；
+  卡片多到一页放不下时，点 **加载更多**。
+- **归档做完的卡**：已完成或已取消的卡片，在卡片页点 **归档**，它就从看板上收起来，放进 **已归档**（看板右上角的按钮），
+  编号、任务和结果都还在。在已归档里同样可以筛选和搜索、打开卡片，点 **恢复** 放回看板。归档的卡片会一直保留，
+  其他结束的卡片只保留最近 500 张。归档的卡片有了新的跟进、或者重新开始时，会自动回到看板。
+- 你说「这个不用做了」时，调度员会取消对应的需求；两件事原来是同一件时，它会合并起来；一张卡它不开任务自己就答完了，它会标记完成。
+- 只有你提的事才算需求；队友之间互相请求、定时任务开出的工作不算。
 
-## Tasks: delegated work in conversations of their own
+## 任务：分派出去的工作各有各的会话
 
-When a bot hands work to a teammate, the work becomes a **task**. The teammate works on each task in a conversation
-of its own, so one bot can take on several tasks at once without mixing them up, and its own conversation stays free
-for you. You don't open tasks yourself: you ask the dispatcher (or any bot), and it opens them.
+一个 bot 把工作交给队友，这件工作就成了一个**任务**。队友在专门的会话里做每个任务，所以同一个 bot 可以同时做好几个任务而不串台，
+它自己的会话也始终空着，你随时能找它。任务不用你亲手建：你把事情交给调度员（或任何一个 bot），由它去建。
 
 <!-- screenshot: tasks view -->
 
-- **Reports**: the bot doing a task reports with a status: **done** with the result, **question** when it needs an
-  answer, **blocked** when it cannot go on, or **progress**, which is kept on the task without interrupting anyone.
-  Done, question and blocked go to you as they are, where the request came from (the main chat, a thread or a chat
-  app; after you reply to one of them in the panel, in that thread), and the bot that asked
-  gets a note that doesn't wake it. When the bot that asked wants the reports back (to put several results together),
-  they reach it at once instead and it passes them on; so do a sub-task's reports, and those of a task that came from
-  no chat (a scheduled run). A report from a task that has already ended, or from a sub-task whose task has ended, is
-  only kept on the task. Anything else the working bot writes stays in the task's conversation.
-- **Sub-tasks**: a bot working on a task can ask a teammate for help; that opens a sub-task, whose report comes back
-  to the task that asked for it.
-- **How many at once**: 4 tasks are worked on at the same time; more wait in line and start as others finish. A
-  person's message to a task that has already started (a follow-up, an answer) may use one place more, so new work
-  cannot hold it up; a bot's message to it, the dispatcher's too, waits for a free place, and the task shows as
-  **Queued** until then. A task that waits for an answer, is stuck or has failed gives its place back once its
-  conversation is idle.
-- **Stages**: **Working**, **Queued**, **Needs your answer** (it asked a question), **Stuck** (see the watchdog
-  below), **Failed** (an error, or a blocked report nobody has answered yet), **Done** and **Stopped**.
-- **Tasks** in the sidebar groups them into **Needs you** (needs your answer, stuck or failed), **In progress**
-  (working or queued) and **Recently done** (done or stopped). A task's page shows the bot doing it, who asked, where
-  the request came from, what was asked, the reports, related tasks and the task's usage, with **Open conversation**,
-  **Retry**, **Mark done**, **Stop** and a box for a message to the task (to answer its question, for instance);
-  **Mark done** and **Stop** both end the task and stop its bot's work on it at once. Each bot's **Tasks** tab lists
-  what it is working on.
-- **What bots say to each other stays out of your way**: in a bot's chat, hand-offs, reports and messages between
-  bots run together as one quiet group under your conversation with it; those about a task that came from a thread
-  show in that thread. **Settings → Chat → Messages between bots**
-  sets how much of them shows, the same on every device: **One line** (the default: who hands what to whom, its
-  stage and time; a click opens the task), **Short** (and the first two lines of the message) or **Full** (the whole
-  message, with the task's card). The bot's replies to you read like the main conversation, without a box.
-- **Live status**: while a bot works, its chat says what it is doing right now and for how long ("Running
-  `npm test` · 42s", "Thinking · 8s", then the step and the time since it started), and so do the bot's line in
-  the list, its tasks in **Tasks** and on the task's page, and a hand-off whose task is running ("Searching for
-  “indoor venues” · 12s"). It moves on its own: the panel checks every second or two while something runs. Only the
-  tool and a short, clipped summary of what it works on show (a command's first line, a file's name, the words
-  searched for), with keys and tokens taken out; never what a tool returned.
-- **Removing a bot** stops the tasks it was doing, which are archived, and the tasks it asked for, which stay in
-  **Tasks**, stopped, where you can still retry one.
-- **Settings → Tasks**: how many tasks are worked on at once (4), the minutes before a quiet task counts as stuck
-  (20), and the hours before a finished task's conversation is archived (24).
+- **汇报**：做任务的 bot 汇报时注明状态：**完成**（附上结果）、**提问**（需要有人回答）、**受阻**（做不下去了），
+  或者**进展**——进展只记在任务上，不打扰任何人。完成、提问和受阻原文发给你，发在请求来的地方（主对话、讨论串或聊天应用；
+  在面板里回复过其中一条的，之后发在那个讨论串里）；
+  发起的 bot 只收到一条提示，不会被唤醒。发起的 bot 要求汇报先回给它时（为了汇总几份结果），汇报立刻送到它那里，由它转告；
+  子任务的汇报、以及不来自任何聊天的任务（比如定时任务开出的）的汇报也是这样。
+  任务结束后才发来的汇报，或者所属任务已经结束的子任务发来的汇报，只记在任务上。
+  做任务的 bot 写的其他内容都留在任务自己的会话里。
+- **子任务**：做任务的 bot 可以找队友帮忙，这会开一个子任务，子任务的汇报回到发起它的那个任务里。
+- **同时做几个**：同一时间最多做 4 个任务，多出来的排队，前面的做完再开始。已经开始的任务收到人发来的新消息（跟进、回答）时，
+  可以多占一个名额，新来的工作挤不掉它；bot 发给它的消息（调度员的也一样）要等有名额空出来，在那之前任务显示为 **排队中**。
+  等你回答、卡住了或失败的任务，会话空下来后就让出名额。
+- **阶段**：**进行中**、**排队中**、**等你回答**（它提了问题）、**卡住了**（见下文「看门狗」）、
+  **失败**（出了错，或报了受阻还没人回应）、**已完成**、**已停止**。
+- 侧栏的 **任务** 分三栏：**需要你处理**（等你回答、卡住了、失败）、**进行中**（进行中、排队中）、**最近完成**（已完成、已停止）。
+  点开一个任务，能看到执行的 bot、发起方、来源、交代的内容、汇报、相关任务和这个任务的用量，
+  还有 **打开会话**、**重试**、**标为完成**、**停止** 几个按钮，以及一个给任务发消息的输入框（比如回答它的提问）；
+  **标为完成** 和 **停止** 都会结束任务，并让 bot 立刻停下手上的活。
+  每个 bot 的 **任务** 标签页列出它手上的工作。
+- **bot 之间的消息不抢戏**：在 bot 的聊天里，分派、汇报和 bot 之间的消息连在一起，收成你和它对话下面安静的一组；
+  来自某个讨论串的任务，相关的这些消息显示在那个讨论串里。
+  **设置 → 聊天 → Bot 之间的消息** 决定显示多少，每台设备都一样：**一行**（默认：谁把什么交给谁、进度和时间，点一下打开任务）、
+  **简短**（再加消息的前两行）、**完整**（整条消息，委派附任务卡片）。bot 回复你的话和主对话一样排版，不再套框。
+- **实时状态**：bot 干活时，聊天里会写出它此刻在做什么、做了多久（"运行 `npm test` · 42 秒"、"思考中 · 8 秒"，再加第几步和总用时）；
+  列表里的这个 bot、**任务** 里和任务详情页里它的任务、以及正在进行的分派那一行也一样。状态会自己往前走：有活在跑时，
+  面板每一两秒刷新一次。只显示工具名和它在处理什么的简短摘要（命令的第一行、文件名、搜索词），会截断，
+  并去掉密钥和 token；工具返回的内容一概不显示。
+- **删除一个 bot** 时，它在做的任务会停止并归档；它发起的任务也会停止，但仍留在 **任务** 里，标为已停止，之后还能重试。
+- **设置 → 任务**：同时进行的任务数（4）、多少分钟没动静算卡住（20）、任务完成多少小时后归档会话（24）。
 
-### The dispatcher as a router
+### 调度员只调度
 
-The dispatcher understands the request, hands the work out and keeps track of it. It does not run commands, write or
-edit files, search the web, use sub-agents and workflows, draw images, make Office files or put question cards to you
-(a card holds every message after it until you answer); it can still read files and use its skills. Work that needs
-any of those goes to a teammate, never to itself, while
-its own conversation stays free for you. When you say "ask me which tone before you write", it hands the work out with
-that request and the teammate asks you in its task; when it must know something itself before it can hand a request
-out, it asks in one line of its reply, and your next message is the answer.
+调度员只负责听懂需求、把工作分派出去、跟进进度，自己不动手。它不执行命令、不写不改文件、不联网搜索、
+不用子代理和工作流、不作图、不做 Office 文档，也不弹提问卡片（一张卡片没答之前，后面的消息都得排队），但仍能读文件、使用技能。
+需要这些能力的事都交给队友，从不派给自己，它自己的会话始终空着等你。
+你说「动笔前先问我」这类话，它把这个要求连同工作一起交给队友，由队友在任务里问你；它自己得先弄清楚才能分派的事，
+就在回复里用一句话问你，你的下一条消息就是答案。
 
-To let it do a small job itself (a quick web search, say), turn that ability on in its **Abilities** section, which
-marks what dispatching turns off: switch a whole ability back on, or use **Turn back on** for the part of one that is
-off (writing and editing under Files). Even then it may not `sleep`, a command must finish within 30 seconds or run in
-the background, and with question cards back on it takes no new message until a card is answered.
+想让它顺手做些小事（比如联网查一下），在它的 **能力** 一栏把那一项打开。**能力** 会标出调度时关掉的项：整项关掉的，打开开关就放回；
+只关掉一部分的（比如读写文件里的写和改），点 **重新打开** 放回（即使放回了命令，它也不能 `sleep`，命令要么在 30 秒内跑完，
+要么放到后台跑；放回提问卡片的话，卡片没答之前它也接不了新消息）。
 
-It never waits for a teammate: it ends its turn and is woken when something needs it, so a new request is not stuck
-behind work in progress, and messages that arrive while it is busy are taken together at its next step, and each one
-gets its answer. Since it only routes, a light, fast model is enough for it; its **Model** section says so, and Bots
-does not change the model for you. Every bot that hands work to a teammate opens a task, not only the dispatcher; but
-nobody opens one for the dispatcher: a teammate's message to it goes into its own conversation, and it tells you what
-you should know and hands out what is work.
+它从不等队友：分派完就结束这一轮，有事需要它时会自动唤醒，所以新请求不会被手上的活堵住；
+它忙的时候进来的消息，会在下一步一起处理，每一条都得到回应。既然只管调度，用轻量、快速的模型就够了，
+**模型** 一栏也会这样提示；Bots 不会替你换模型。任何 bot 把工作交给队友都会开任务，不只调度员；
+但没有人给调度员开任务：队友发给它的消息直接进它自己的会话，由它转告你该知道的、把该做的活分派出去。
 
-It routes once the team has at least one bot besides the dispatcher; a dispatcher on its own does the work itself.
+团队里除了调度员至少还有一个 bot，它才开始只调度；只有调度员一个 bot 时，它自己干活。
 
-### Chats and threads
+### 聊天与讨论串
 
-A task remembers the chat it was asked from: a private chat, a Slack or Discord thread, a Feishu topic or reply chain,
-a Telegram topic, or the panel.
+任务会记住它来自哪个聊天：私聊、Slack 讨论串、Discord 子区或回复链、飞书话题或回复链、Telegram 话题，或者面板。
 
-- **Answers go back where the request came from.** The bot doing a task answers in that task's chat itself, signed
-  with its name (`【Forge】`) when the chat app belongs to another bot, so two requests from two chats are answered each
-  in its own chat. The dispatcher hears of it with a note that wakes nothing, and leaves that task out of what it says
-  in other chats. When one turn of the dispatcher involves more than one chat (the panel and a chat app, say; news of
-  a task that came from no chat counts as the panel), it answers each with `bot_reply`, and a task it opens there has
-  to say which one it is for (`panel` for the panel). Plain text left over from such a turn stays in the panel, marked
-  **Not sent** while a chat still waits for its answer. Once each chat has one it is not shown, unless the panel
-  itself was part of the turn: then it is the panel's answer.
-- **A follow-up in a thread goes straight to the task.** In a Slack or Discord thread, a Feishu topic or reply chain,
-  or a Telegram topic, what you write later in the same thread goes to the tasks started there; the dispatcher only
-  gets a note, which does not wake it. Until its conversation is archived, a done task also takes such a message and
-  goes on; a stopped task does not. In Slack, Discord and Feishu groups the bot answers under your message, so each
-  request there starts a thread of its own.
-- **Otherwise a thread gets a conversation of its own, as in the panel.** In a thread with no live task, its first
-  message (the one that @mentions the bot in a group, say) goes to the bot's own conversation; once the bot has
-  answered there, what you write later in the same thread goes to a conversation forked from the bot's at that
-  exchange: it doesn't see what the bot talked about elsewhere since, and nothing said in the thread goes back.
-  Replying to one of the bot's own chat messages (a Feishu or Discord reply, a Slack thread) works the same way,
-  forked at that message.
-  In Telegram only forum topics are threads; a reply in a private chat is not.
-- **A follow-up in a private chat goes to the dispatcher.** A private chat (and a group without threads) is one long
-  conversation where new requests arrive too, so a message sent there (not a reply) goes to the dispatcher, unless one task asked a
-  question there and is still waiting for the answer: then that task takes it. With two or more waiting, it goes to
-  the dispatcher, which works out which one it answers.
-- A message that starts with `@handle` still goes to that bot's own conversation.
-- **A task keeps the message it came from.** The dispatcher hands work out in its own words, so a task opened from a
-  chat message also keeps your own words, the chat context read with them (Feishu: the message you reply to, the
-  topic or reply chain, chat history you forwarded; see [Feishu / Lark](#feishu--lark)) and the chat's ids. The bot
-  doing it reads them under "Where it came from" in its first message, a lead's sub-tasks get them too, and
-  `bot_recall` reads them as `ticket/<id>/source`.
+- **结果回到请求来的地方。** 做任务的 bot 自己把结果发到这个任务来自的聊天；聊天应用属于别的 bot 时，开头署上它的名字（`【Forge】`），
+  所以从两个聊天各派一件事，结果各回各的聊天。调度员只收到一条不唤醒它的提示，在别的聊天里说话时不会提这个任务。
+  如果调度员的某一轮同时涉及好几个聊天（比如面板和一个聊天应用；不来自任何聊天的任务传来的消息算面板），它会用 `bot_reply` 分别回复，
+  这一轮开的任务也要说明是给哪一个的（面板写 `panel`）。这一轮剩下的普通回复只留在面板里，还有聊天没回复时标着 **未发出**；
+  每个聊天都回复过了就不显示，除非面板本身也在这一轮里，那它就是给面板的回复。
+- **讨论串里的跟进直接交给任务。** 在 Slack 讨论串、Discord 子区或回复链、飞书话题或回复链、Telegram 话题里，
+  你之后在同一个讨论串里说的话，直接交给从这里开出的任务；调度员只收到一条提示，不会被唤醒。
+  在会话归档之前，已完成的任务收到这样的消息也会接着做；已停止的任务不会。
+  在 Slack、Discord 和飞书的群里，bot 会在你那条消息下面回复，所以群里每个请求都自成一个讨论串。
+- **其他时候，讨论串和面板里一样各有各的会话。** 讨论串里没有进行中的任务时，第一条消息（比如群里 @ 它的那条）交给 bot 自己的会话；
+  bot 在那里答过之后，同一个讨论串里再说的话，交给从 bot 会话在这次往来处分出来的会话：看不到 bot 后来在别处聊的内容，
+  讨论串里说的也不会带回去。回复 bot 在聊天里发过的某条消息（飞书和 Discord 的回复、Slack 讨论串）也一样，从那条消息处分出来；
+  Telegram 只有论坛话题算讨论串，私聊里的“回复”不算。
+- **私聊里的跟进交给调度员。** 私聊（以及没有讨论串的群）是一整段对话，新请求也从这里来，所以直接发的新消息交给调度员；
+  只有一个任务在这里提了问题、还在等回答时，这条消息才交给那个任务。有两个或更多任务在等回答时，消息仍交给调度员，
+  由它判断是在回答哪一个。
+- 以 `@handle` 开头的消息，仍然直接进那个 bot 自己的会话。
+- **任务留着它来自的那条消息。** 调度员用自己的话把工作派出去，所以从聊天消息开出的任务，还会留着你的原话、和它一起读到的聊天上下文
+  （飞书：你回复的那条消息、所在的话题或回复串、你转发的聊天记录，见[飞书](#飞书)），以及这个聊天的 ID。做任务的 bot 在第一条消息的
+  「Where it came from」下面读到它们，负责人拆出去的子任务也有，`bot_recall` 用 `ticket/<id>/source` 能读全文。
 
-### The watchdog
+### 看门狗
 
-Every 5 minutes Bots checks the tasks in progress by fixed rules; no model judges anything:
+Bots 每 5 分钟按固定规则检查一遍进行中的任务，不靠模型判断：
 
-- A task whose conversation is idle, with nothing running in the background (commands, sub-agents, sub-tasks), and
-  that has had no news for 20 minutes is asked once for a status report. With still no report 20 minutes later, it is
-  **Stuck**, and the bot that asked is told.
-- After a step fails with a temporary error (HTTP 408, 429 or 5xx, a dropped or refused connection), the task is told
-  to continue 15 seconds later, then 30, then 60. A fourth such failure in a row, or any other error, and it has
-  **Failed**; the bot that asked is told.
-- When every task a bot asked for the reports of has settled (done, failed, stopped or stuck) and that bot has said
-  nothing since (an answer marked **Not sent** doesn't count), it gets one reminder to tell whoever asked. Tasks that
-  answered the person themselves need no reminder. A task that asked for
-  sub-tasks and has ended since gets none.
-- After Harness restarts, a task that was in the middle of its work gets a note: check what was already done (files,
-  commands, messages sent), don't repeat it, then go on. A task whose conversation is gone starts again from its
-  assignment with the same note, and one whose assignment never reached its conversation gets it again. Queued tasks
-  start, and messages waiting for a place are handed over, as places free up; no message is handed over twice.
+- 任务的会话空闲、后台没有在跑的东西（命令、子代理、子任务），而且 20 分钟没有动静，就请它汇报一次进度；
+  再过 20 分钟还没汇报，就标为 **卡住了**，并通知发起的 bot。
+- 某一步遇到临时错误（HTTP 408、429 或 5xx，连接断开或被拒），15 秒后让任务继续，再失败就等 30 秒、再等 60 秒；
+  连续第四次失败，或者遇到其他错误，任务就 **失败**，并通知发起的 bot。
+- 一个 bot 要求回报的任务全都有了结果（已完成、失败、已停止或卡住了），它却一直没开口（标着 **未发出** 的回复不算），
+  就提醒它一次，让它告诉请求方。发起方如果是一个已经结束的任务，就不再提醒；直接回复了你的任务也不需要提醒。
+- Harness 重启后，做到一半的任务会收到一条说明：先检查已经做过的事（文件、命令、发出去的消息），不要重复，再接着做。
+  会话已经不在的任务，带着同一条说明从原来的交代重新开始；交代没送进会话的任务，会重新收到交代。
+  排队的任务和等名额的消息，有空位时再开始、再送达；同一条消息不会投递两次。
 
-### When a bot asks you a question
+### bot 向你提问
 
-A bot can stop and ask you a multiple-choice question (Harness's `ask_user_question`). The question shows as a card
-above the message box, in the bot's Chat and on the task's page, and the bot or task is marked as needing you. Pick an
-option or type your own answer; answering in the Harness conversation works too, and whichever answer comes first
-counts. If the work came from a chat app, the bot also posts there that it is waiting for your answer in DeepSeek
-Harness. The answer itself is given in Harness, not in the chat. Plan reviews are answered in the conversation; the
-card links to it. A waiting question does not survive a restart of Harness.
+bot 可以停下来问你一道选择题（Harness 的 `ask_user_question`）。问题会以卡片的形式出现在输入框上方，
+bot 的聊天页和任务详情页都有，同时这个 bot 或任务会被标为需要你处理。点一个选项，或者输入自己的回答即可；
+在 Harness 的会话里回答也行，先到的那个回答生效。如果这件事是从聊天应用里发起的，bot 还会在那个聊天里说一声：
+它正在 DeepSeek Harness 里等你回答。回答要在 Harness 里给，不能在聊天里直接答。计划审阅仍在会话里处理，
+卡片上有入口。Harness 重启后，还没回答的问题不会保留。
 
-### When a tool waits for your approval
+### 工具等你批准
 
-A tool in a bot's conversation or task can wait for you to allow it, for example a file write outside the workspace or
-a command outside the sandbox. The approval shows as a card above the message box, in the bot's Chat and on the task's
-page, with what the tool wants to do, **Allow once** and **Reject**; deciding in the Harness conversation works too,
-and the first decision counts. The task is marked **Needs your approval** in the task list and in the chat line of the
-bot that handed it out, and the watchdog leaves it alone while it waits. When the bot that asked for the task checks on
-it or adds to it, it is told that the task waits for your approval, so it sends you there instead of messaging the task
-again. If the work came from a chat app, the bot posts there once that it waits for your approval in DeepSeek Harness;
-a reply in the chat does not decide it.
+bot 的会话或任务里，有些工具要先经过你批准，比如在工作区外写文件、在沙箱外跑命令。审批会以卡片的形式出现在输入框上方，
+bot 的聊天页和任务详情页都有，写明工具要做什么，并带 **允许一次** 和 **拒绝** 两个按钮；在 Harness 的会话里决定也行，
+先到的那个决定生效。等待期间，任务列表和派出任务的 bot 的聊天里，这个任务都标着 **等你批准**，看门狗也不会去催它。
+派出任务的 bot 查询或补充这个任务时，会被告知它在等你批准，于是它会请你去处理，而不是再往任务里发消息。
+如果这件事是从聊天应用里发起的，bot 会在那个聊天里说一次：它正在 DeepSeek Harness 里等你批准；在聊天里回复不算数。
 
-## Built on what Harness already does
+## 充分利用 Harness 已有的能力
 
-A bot works in ordinary Harness conversations, so everything Harness can do, a bot can do:
+Bot 在普通的 Harness 会话里工作，所以 Harness 能做的它都能做，不需要重复造轮子：
 
-- **Abilities**: web search, files, running commands and code, Office documents, image generation,
-  sub-agents and workflows, handing over files… switched per bot on its Profile tab (a reviewer bot
-  that cannot run commands, for instance). In a team of more than one bot, the dispatcher has no Harness sub-agents or
-  workflows: work in parallel goes to teammates, so the panel shows it as their tasks (even when a skill says to start
-  sub-agents). The other bots keep them.
-- **Skills**:
-  - **Add from Harness**: pick from the skills you already installed (`~/.agents/skills`,
-    `~/.dsh/skills`, …); referenced, not copied, so they stay up to date;
-  - **Import from GitHub**: browse Anthropic's skills in one click, or paste any `owner/repo/path`; the
-    whole skill folder comes along, scripts included;
-  - **Add from a folder**: pick a skill folder on this machine (or a folder holding several, e.g.
-    `~/.claude/skills`); linked, not copied, so editing the folder is enough;
-  - **Add from Magpie**: shown when this machine has a [Magpie](https://usemagpie.ai) skill library
-    (`~/.config/magpie/library/skills`, or under `XDG_CONFIG_HOME` for its command line). It lists the library's skills
-    and which agents Magpie gives each to. They are linked, not copied, so when Magpie updates or edits a skill, the bot
-    uses the new version; install, update and remove them in Magpie. The skill's card says **Magpie**;
-  - a skill name is used once per bot: adding one that is already there is skipped, and importing again
-    from the same GitHub folder updates it in place;
-  - up to 50 skills can be on at once (each one on is in the bot's prompt every turn); a bot keeps up to
-    200 in all, so past 50 new ones come in switched off;
-  - **Let the bot write it**: describe what you need in a sentence; the bot writes it with skill-creator
-    and saves it to itself;
-  - writing one by hand is still possible, as the last resort.
-- **Apps** add only the outside systems Harness doesn't reach on its own:
-  - **Import from your other agents**: MCP servers you already configured in Codex, Claude Code,
-    Claude Desktop, Cursor, Windsurf, Gemini CLI or opencode are found automatically; tick them,
-    keys included;
-  - **the gallery**:
+- **能力**：联网搜索、读写文件、运行命令与代码、Office 文档、AI 作图、子代理与工作流、交付文件……在「资料」页按能力开关，
+  比如让审查 bot 不能运行命令。团队里有不止一个 bot 时，调度员不用 Harness 自带的子代理和工作流：要并行的活交给队友，
+  面板里能看到各自的任务（就算技能里写着「启动子代理」也一样）；其他 bot 照常可以用；
+- **技能**：
+  - **从 Harness 添加**：直接选你已经装好的技能（`~/.agents/skills`、`~/.dsh/skills` 等），引用而不复制，跟着更新；
+  - **从 GitHub 导入**：一键浏览 Anthropic 官方技能，或粘贴任意 `owner/repo/path`，整个技能文件夹连脚本一起导入；
+  - **从本地文件夹添加**：选本机的一个技能文件夹（或装着多个技能的文件夹，如 `~/.claude/skills`），只引用不复制，改了原文件夹就生效；
+  - **从 Magpie 添加**：本机有 [Magpie](https://usemagpie.ai) 技能库（`~/.config/magpie/library/skills`，命令行设了 `XDG_CONFIG_HOME` 时在那下面）才显示。
+    列出库里的技能，以及 Magpie 把每个分发给了哪些 agent。只引用不复制，Magpie 更新或修改了技能，bot 就用新的；安装、更新和删除都在 Magpie 里做。
+    技能卡片上标着 **Magpie**；
+  - 同一个 bot 里技能不重名：已有的同名技能会跳过；从同一个 GitHub 文件夹再导入一次则原地更新；
+  - 最多同时开 50 个技能（开着的每轮都在 bot 的提示里），总共最多放 200 个；超过 50 个时，新加的先关着；
+  - **让 Bot 自己写**：一句话描述需求，bot 用 skill-creator 写好并保存到自己身上；
+  - 手写仍然可以，但它是最后的选项；
+- **应用**：只补 Harness 本身没有的外部系统；
+  - **从其他 Agent 导入**：自动发现你在 Codex、Claude Code、Claude Desktop、Cursor、Windsurf、Gemini CLI、opencode 里配好的 MCP 服务，勾选即用，Key 一并带上；
+  - **应用库**：
 
-| Category | Apps (🔑 = needs a key) |
+| 分类 | 应用（🔑 = 需要 Key） |
 | --- | --- |
-| Sales & payments | Stripe 🔑, HubSpot CRM 🔑 |
-| Team & office | Feishu / Lark 🔑, Telegram 🔑, Slack 🔑 and Discord 🔑 (chat apps, below), GitHub Issues 🔑 ([below](#hand-work-out-from-github-issues)), Feishu / Lark Open Platform 🔑, Notion 🔑, Slack workspace 🔑, Memory |
-| Build & ship | GitHub 🔑, Git, Supabase 🔑, Sentry 🔑, Context7 Docs |
-| Research & content | Exa, Keenable, Tavily 🔑, Brave 🔑, Firecrawl 🔑 |
-| Computer & browser | Open Computer Use (operate macOS apps), Playwright |
-| Data | PostgreSQL 🔑, SQLite |
-| Maps & local | Amap 🔑, Baidu Maps 🔑 |
-| Custom | Any local (stdio) or remote (Streamable HTTP) MCP server |
+| 销售与收款 | Stripe 收款 🔑、HubSpot 客户管理 🔑 |
+| 团队与办公 | 飞书 🔑、Telegram 🔑、Slack 🔑、Discord 🔑（聊天应用，见下文）、GitHub Issues 🔑（[见下文](#从-github-issue-派活)）、飞书开放平台 🔑、Notion 🔑、Slack 工作区 🔑、长期记忆 |
+| 研发与交付 | GitHub 🔑、Git 仓库、Supabase 🔑、Sentry 🔑、Context7 文档 |
+| 调研与内容 | Exa、Keenable、Tavily 🔑、Brave 🔑、Firecrawl 🔑 |
+| 电脑与浏览器 | Open Computer Use（操控 macOS 应用）、Playwright 浏览器 |
+| 数据 | PostgreSQL 🔑、SQLite |
+| 地图与本地 | 高德地图 🔑、百度地图 🔑 |
+| 自定义 | 任意本地（stdio）或远程（Streamable HTTP）MCP 服务 |
 
-  Two are featured at the top, each with a one-click install: [Open Computer Use](#open-computer-use) and
-  [Images](#images).
+  排在最前面的两个是默认推荐，都能一键安装：[Open Computer Use](#open-computer-use) 和[图片](#图片)。
 
-- **Schedules** are ordinary Harness scheduled tasks, also on the Automation page. A scheduled task missed while
-  Harness was closed runs when it starts again, once (its latest occurrence): that is Harness's rule, and Bots adds
-  no runs of its own. A team with many schedules can open several tasks at once after a start, and use many tokens.
-- **AI avatars**: with the [Images plugin](#images), draw a bot's avatar from its persona. A bot can do it too:
-  ask the dispatcher to give the team new avatars and describe the look, or point it at an image file. A bot's
-  drawing runs in the background, so it goes on answering you: a ring turns around the avatar while the picture is
-  drawn, the new one shows when it is ready, and the bot hears that it is ready (or why it failed) and tells you. A restart of
-  Harness drops a drawing under way.
-- **Logos**: each app in the gallery shows its vendor's own logo (the App Store icon where there is an app,
-  otherwise the logo from the vendor's site or repository). The logos are their owners' trademarks and
-  only identify each service.
+- **定时任务**：就是 Harness 的定时任务，也出现在「自动化」页面。Harness 没开着时错过的定时任务，下次启动时由 Harness 补跑，
+  每个只补最近的那一次（这是 Harness 的规则，Bots 不另外补）；团队的定时任务多时，启动后会一下子开出好几个任务、用掉不少 token。
+- **AI 头像**：装了[图片插件](#图片)就能按 bot 的人设生成头像。bot 自己也能做：让调度员给团队换一批头像，
+  说清楚想要的样子就行，也可以指给它一张本地图片。bot 画头像是在后台进行的，不耽误它回你的话：画的时候头像上有一圈在转，
+  画好就换上；画好了（或没画成、为什么）bot 会收到通知并告诉你。Harness 重启会丢掉正在画的头像。
+- **图标**：应用库里每个应用都用它自己的官方 logo（有 App 的用 App Store 图标，没有的用官网或官方仓库里的 logo）。
+  这些 logo 是各自所有者的商标，只用来标明是哪个服务。
 
-## Each bot on its own model
+## 每个 bot 用自己的模型
 
-A bot's **Profile → Model** picks the model its conversations run on (its tasks' too), grouped by provider, with the
-model's thinking levels when it has them. Besides the models Harness already has, **Model sources** adds:
+在 bot 的 **资料 → 模型** 里选它的会话（包括它做任务的会话）用哪个模型：按提供方分组，模型支持思考强度时还能选强度。
+除了 Harness 里已有的模型，**模型来源** 还能添加：
 
-- **Your own endpoint**: any OpenAI-compatible (Chat Completions or Responses), Anthropic-compatible or
-  Gemini base URL, a key and model ids (or **Fetch models** to tick them from the endpoint's list). It
-  becomes a Harness provider `bots-<name>`, its key in the Harness credential store, so it also shows up in
-  Settings → Models and in every conversation.
-- **A login another agent on this computer already has**: the Codex CLI's ChatGPT login
-  (`~/.codex/auth.json`) becomes Harness's `openai-codex` provider. OpenAI rotates the login on every
-  refresh, so the two copies are kept in sync both ways — whichever side refreshes, the other gets the new
-  tokens, and neither signs the other out. Claude Code's login is shown but not offered: Anthropic allows a
-  Claude subscription only in Claude Code and claude.ai, so add Claude with an API key instead.
+- **自定义端点**：任意 OpenAI 兼容（Chat Completions 或 Responses）、Anthropic 兼容或 Gemini 的 Base URL，
+  加上 Key 和模型 id（也可以点 **获取模型列表** 从端点勾选）。它会成为 Harness 的提供方 `bots-<名称>`，
+  Key 存进 Harness 凭据库，所以在 设置 → 模型 和所有会话里也能用。
+- **本机其他 Agent 已有的登录**：Codex CLI 的 ChatGPT 登录（`~/.codex/auth.json`）会成为 Harness 的
+  `openai-codex` 提供方。OpenAI 每次刷新登录都会换新令牌，所以两份登录会双向同步：无论哪一边刷新，
+  另一边都会拿到新令牌，谁也不会把谁踢下线。Claude Code 的登录会显示出来但不提供：Anthropic 只允许
+  在 Claude Code 和 claude.ai 里使用 Claude 订阅，请改用 API Key 添加 Claude。
 
-![Model sources](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-model-sources.png)
+![模型来源](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/model-sources.png)
 
-## Topics: conversations that don't grow forever
+## 话题：对话不会无限变长
 
-A bot's own conversation is a **topic**. A new topic is a fresh conversation (the old one is archived, the
-bot's scheduled tasks move along); what the bot knows carries over in its memory. A new topic starts:
+bot 自己的会话就是一个**话题**。新话题是一段全新的会话（旧会话归档，bot 的定时任务一起搬过去），
+bot 知道的事靠记忆延续。下面几种情况会开新话题：
 
-- when you send `/new` (or `/clear`, `/新话题`) in the panel or from a chat app — text after it goes to the
-  new topic — or click **New topic** under the composer;
-- by itself before the next request, after **6 hours** of quiet, or once the conversation's prompt reached
-  **128K tokens** (Settings; 0 turns either off). A big conversation is never cut while a teammate's
-  answer may still be coming.
+- 在面板或聊天应用里发送 `/new`（也可以是 `/clear`、`/新话题`），后面跟的文字会发到新话题里；
+  或者点输入框下方的 **新话题**；
+- 处理下一个请求前自动开：闲置超过 **6 小时**，或对话的提示已经达到 **128K tokens**（可在设置里调，
+  0 表示关闭）。如果队友的回复可能还在路上，即使对话很长也不会被切断。
 
-Harness still compacts a conversation that nears the model's limit; topics keep every call small and cheap
-long before that. A task's conversation is not a topic: it ends with its task. A task's report reaches the bot
-that asked for it even after that bot started a new topic. Threads are not topics either: a new topic leaves the
-threads as they are, and a message from an earlier topic can still be replied to. The old conversation is archived,
-and the Bots panel stays where it is (it used to jump to Harness's conversation view).
+对话接近模型上限时，Harness 自己仍会压缩；话题在那之前很久就让每次调用保持小而便宜。
+任务的会话不算话题，任务结束它也就结束了。发起任务的 bot 即使已经换了新话题，任务的汇报照样送到它那里。
+讨论串也不算话题：开新话题不影响已有的讨论串，回复上一个话题里的消息照样开讨论串。
+开新话题时旧会话会归档，Bots 面板留在原地（以前会跳到 Harness 的对话界面）。
 
-## Memory
+## 记忆
 
-Every bot keeps **notes** that outlast its topics. Two more lists are shared:
+每个 bot 都有跨话题保留的**笔记**。另外还有两种共享的：
 
-- **Shared notes**, read by every bot in every piece of work: about you, your business, the setup, shared
-  conventions.
-- **Project memory**, one list per project, read only by the tasks of that project: its decisions, conventions,
-  contacts and dates. Removing a project removes its memory.
+- **共享笔记**：每个 bot 在任何工作里都会读到，放关于你、你的业务、环境和约定的事。
+- **项目记忆**：每个项目一份，只有这个项目的任务会读到，放它的决定、约定、联系人和日期。删除项目时一起删掉。
 
-How notes are written and kept:
+笔记怎么写、怎么保留：
 
-- **After each piece of work** a short model call writes one line to the bot's **journal** (what was asked,
-  what came of it) and adds, corrects or removes notes — preferences, people, decisions, procedures, lessons.
-  What every bot should know goes to the shared notes; what concerns the task's project only goes to that project's
-  memory. In a bot's own conversation this happens after every **run** (everything the bot does for one request,
-  until it is idle again); for a task, once, when the task ends.
-- **Notes never record the state of work** (done, delivered, waiting), where a file is, or who is on the team: the
-  journal, the board and the roster keep those.
-- **A note about something with a date** (an event, a deadline, an offer) has a **last day**. After it, the note is
-  no longer read, and the next consolidation removes it. The passes give one to dated notes; you can set or clear it
-  in the panel. Pinned notes never run out.
-- **The bot itself** saves notes with `memory_save` (scope `self`, `team` or `project`, with `until` for a last day)
-  when you tell it to remember something, removes them with `memory_forget`, and looks through notes, the team
-  journal, digests and tasks (their titles and reports) with `memory_search`. In a task's conversation it finds,
-  besides its own and the shared notes, only its project's notes, the journal lines and tasks of that task, the task
-  that asked for it and its sub-tasks, and no digests.
-- **Every night** (03:00 by default) memory is **consolidated**: notes past their last day go first; each bot's
-  notes are merged, corrected and trimmed with its recent journal, the shared notes and the projects' memory too (a
-  shared note about one project moves into that project), and the day's work is written up as the team's **daily
-  digest**. **Consolidate now** runs it at once. Notes and digests are written in the
-  language you write to the bots in, judged from your recent messages; a note left in another language
-  is rewritten in it.
-- A bot reads its notes, the shared notes (a task of a project, that project's memory too), its last few journal
-  lines and the latest digest when a topic or a task's conversation starts, and again at the next run after you edit memory or the nightly
-  consolidation ran. Within a topic the memory part of its prompt stays the same, so the model's prompt
-  cache over the conversation keeps working (what it learns in a topic is in that conversation anyway). A
-  short exchange — an acknowledgement, a one-line answer to a teammate — gets a journal line without a
-  model call.
-- The **Memory** tab of a bot and **Team memory** in the sidebar show everything (**Project memory** there, by
-  project); add, edit, pin or delete notes, and set a note's last day. Pinned notes are never changed by the automatic passes. Text that looks like a key
-  or token is never stored.
-- Memory work runs on each bot's own model unless Settings names a cheaper one.
+- **每做完一件事**，一次简短的模型调用会在 bot 的**工作日志**里写一行（要做什么、结果如何），
+  并增补、更正或删除笔记：偏好、人物、决定、做法、教训。所有 bot 都该知道的事写进共享笔记，只和任务所属项目有关的事写进那个项目的记忆。
+  在 bot 自己的会话里，每个**回合**（bot 从收到一个请求到重新空闲为止做的所有事）结束后写一次；
+  任务则在结束时写一次。
+- **笔记不记工作进度**（做完了、交付了、在等谁）、文件放在哪、团队里有谁：这些由工作日志、看板和名册记着。
+- **有日期的事**（活动、截止日、报价）的笔记带**截止日**：过了这天就不再读到，下次整理时删掉。自动整理会给这类笔记加上截止日，
+  你也可以在面板里设置或清除。置顶的笔记不会过期。
+- **bot 自己**也会记：你让它记住什么时它用 `memory_save` 保存（范围 `self`、`team` 或 `project`，截止日用 `until`），
+  用 `memory_forget` 删除，用 `memory_search` 查笔记、团队工作日志、每日摘要和任务（标题和汇报）。在任务的会话里，
+  除了自己的笔记和共享笔记，只查得到所属项目的笔记，以及这个任务、它的所属任务和子任务的工作日志与任务，查不到每日摘要。
+- **每天夜里**（默认 03:00）**整理**一次：先删掉过了截止日的笔记；再结合最近的工作日志，合并、更正、精简每个 bot 的笔记、
+  共享笔记和各项目的记忆（只关于某个项目的共享笔记会挪进那个项目），并把当天的工作写成团队的**每日摘要**。**立即整理** 可以马上运行。笔记和摘要用你和 bot 说话的语言写（看你最近的
+  消息判断），写成别的语言的笔记会被改写过来。
+- 话题或任务的会话开始时，bot 会读到自己的笔记、共享笔记（项目的任务还有那个项目的记忆）、最近几条工作日志和最新的每日摘要；
+  你在面板里改了记忆、或每晚整理之后，下一个回合会重新读一次。同一个话题里，提示词中的记忆部分保持不变，模型对整段对话的
+  提示缓存照常命中（话题里学到的东西本来就在这段对话里）。很短的往来（一句确认、给队友的一行回复）只记一行
+  工作日志，不调用模型。
+- bot 的 **记忆** 标签页和侧栏的 **团队记忆** 能看到全部内容（**项目记忆** 在团队记忆页里按项目看），可以添加、修改、置顶或删除笔记，设置截止日。
+  置顶的笔记不会被自动整理改动；看起来像 Key 或 Token 的内容一律不存。
+- 记忆工作默认使用各 bot 自己的模型，也可以在设置里指定一个更便宜的。
 
-![A bot's memory](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-memory.png)
+![bot 的记忆](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/memory.png)
 
-![Team memory](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-team-memory.png)
+![团队记忆](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/team-memory.png)
 
-## Usage
+## 用量
 
-**Usage** in the sidebar counts every model call the bots make — their conversations (tasks' included), the
-memory work and Harness compacting their context — by bot, model, kind of work, scheduled task, task and day
-(or hour, for today), with the change from the period before. **Runs** and **Recent runs** count runs (see
-Memory: one request, from you, a chat app, a schedule or another bot, until the bot is idle again); a task
-takes one run or more, **By task** adds them up, and a task's own page shows its usage. Costs are
-estimates from your own prices or LiteLLM's public price list (**Prices**); a model with no price shows its
-tokens only.
+侧栏的 **用量** 统计 bot 的每一次模型调用（它们的对话——包括做任务的会话——记忆工作，以及 Harness
+压缩它们的上下文），可按 bot、模型、用途、定时任务、任务和日期（今天按小时）查看，并和上一期对比。
+**回合** 和 **最近的回合** 统计的是回合（见「记忆」：一个请求，来自你、聊天应用、定时任务或其他 bot，
+直到 bot 重新空闲）；一个任务有一个或多个回合，**按任务** 把它们加在一起，任务详情页里也有它自己的用量。
+费用是估算：用你填的价格，或 LiteLLM 公开价格表（**价格**）；没有价格的模型只显示 tokens。
 
-![Usage](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/en-usage.png)
+![用量](https://raw.githubusercontent.com/kadaliao/dsh-bots/main/docs/usage.png)
 
-## Message your team from Feishu, Telegram, Slack or Discord
+## 在飞书、Telegram、Slack 或 Discord 里给团队发消息
 
-Add **Feishu / Lark**, **Telegram**, **Slack** or **Discord** to a bot (normally the dispatcher) in its **Apps** tab, and you can hand out
-work from your phone: what you send the chat bot goes to the team as if you typed it in the panel, and
-the replies come back to the chat, including the dispatcher's report once its teammates have answered.
+在某个 bot（一般是调度员）的**应用**页加上**飞书**、**Telegram**、**Slack** 或 **Discord**，就能用手机派活：你发给聊天 Bot 的话，
+会像在面板里输入一样交给团队；回复会回到聊天里，包括队友回复之后调度员的汇总汇报。
 
-> **You, in Telegram**: Get the release organised for next week.
+> **你（在 Telegram 里）**：把下周的发布安排一下。
 >
-> **Atlas**: On it: Forge takes the three P1 bugs, Echo drafts the launch post.
+> **Atlas**：收到：Forge 处理三个 P1 bug，Echo 起草发布文案。
 >
-> **Atlas** (later): Bugs fixed and merged; the launch draft is ready for your review.
+> **Atlas**（稍后）：bug 已修好并合并；发布文案已备好，等你过目。
 
 ### Telegram
 
-1. In Telegram, open [@BotFather](https://t.me/BotFather), send `/newbot`, pick a name and a username
-   ending in `bot`. Make a new bot just for this team.
-2. In Bots, open the dispatcher → **Apps** → **Telegram** → paste the token BotFather gave you → **Add**.
-   It connects at once and shows **Connected as @yourbot**.
-3. Pair yourself: the panel shows a one-time code (it works once, for 10 minutes). Click **Open in
-   Telegram** and press **Start**, or send the code to your bot. The bot answers "Paired".
-4. Message the bot. Start a message with `@handle` to reach another bot directly (`@forge fix the login bug`).
-   In a group, add the bot and @mention it (or reply to it); it ignores the rest of the conversation.
+1. 在 Telegram 里打开 [@BotFather](https://t.me/BotFather)，发送 `/newbot`，起一个名字和以 `bot` 结尾的用户名。
+   请专门给这个团队新建一个 Bot。
+2. 在 Bots 里打开调度员 → **应用** → **Telegram** → 粘贴 BotFather 给你的 Token → **添加**。
+   它会立刻连接，显示**已连接：@你的bot**。
+3. 配对你自己：面板上会显示一个一次性配对码（10 分钟内有效，只能用一次）。点**在 Telegram 中打开**再点
+   **Start**，或者直接把配对码发给你的 Bot。Bot 回复「配对成功」。
+4. 给 Bot 发消息即可。消息以 `@handle` 开头可以直接找其他 bot（例如 `@forge 修一下登录 bug`）。
+   在群里，把 Bot 拉进群并 @ 它（或回复它）；群里的其他对话它一概不理。
 
 ### Discord
 
-1. In the [Developer Portal](https://discord.com/developers/applications): **New Application** → **Bot** →
-   **Reset Token** and copy it. On the same page turn on **Message Content Intent** (without it the bot
-   cannot read messages, and the panel says so).
-2. Add **Discord** to the dispatcher with that token. Once connected, use **Invite the bot to a server**
-   (any server you are in, a private one is fine): Discord only lets you DM a bot you share a server with.
-3. DM the bot the pairing code, then DM it your requests, or @mention it in a channel.
+1. 在 [开发者后台](https://discord.com/developers/applications)：**New Application** → **Bot** → **Reset Token**，复制 Token。
+   在同一页打开 **Message Content Intent**（不开就读不到消息，面板也会提示）。
+2. 用这个 Token 给调度员添加 **Discord**。连上后点**把 Bot 邀请进你所在的服务器**（任何你在的服务器都行，私人服务器也可以）：
+   Discord 只允许你私信和你同在一个服务器的 Bot。
+3. 私信 Bot 发送配对码，之后直接私信它派活，或在频道里 @ 它。
 
-### Feishu / Lark
+### 飞书
 
-Feishu uses its long connection: the Harness connects out to Feishu, so your computer needs no public
-address. The same steps work for Lark; the panel finds out which one your app belongs to.
+飞书走长连接：由 Harness 主动连到飞书，电脑不需要公网地址。国际版 Lark 步骤相同，面板会自己判断应用属于哪一边。
 
-1. Open the developer console at https://open.feishu.cn/app (Lark: https://open.larksuite.com/app) and
-   **Create Custom App**.
-2. **Add Features** → **Bot**.
-3. **Permissions & Scopes** (**Batch import/export scopes** accepts the JSON below):
-   - required: `im:message.p2p_msg:readonly`, `im:message.group_at_msg:readonly`, `im:message:send_as_bot`
-   - optional: `contact:contact.base:readonly` + `contact:user.base:readonly` (sender names),
-     `im:message.reactions:write_only` (a "Typing" reaction while the team works), `im:chat:readonly` (group names),
-     `im:message:readonly` (the images you send, and the chat context below: the message you reply to, chat history you forward),
-     `im:message.group_msg` (the earlier messages of a topic; a sensitive scope an admin approves)
-4. Copy the **App ID** and **App Secret** from **Credentials & Basic Info** into the bot's **Apps** →
-   **Feishu / Lark**, and save. The long connection comes up. If the panel asks you to turn on the bot,
-   that only means no version is published yet; the connection is already online.
-5. With the Harness running, go to **Events & Callbacks** → **Event Configuration**, set the subscription
-   mode to **Receive events through persistent connection** and save. The console only accepts this while
-   a connection is online.
-6. **Add Events** → `im.message.receive_v1`.
-7. **Version Management & Release** → create a version whose availability includes the people who will
-   use it, and publish (an admin may need to approve).
-8. In Feishu, open a chat with the bot (search for the app, or use **Open in Feishu** in the panel) and
-   send the pairing code. For a group, add the bot to the group and @ it.
+1. 打开开发者后台 https://open.feishu.cn/app （Lark：https://open.larksuite.com/app），创建企业自建应用。
+2. 「添加应用能力」→ 添加「机器人」。
+3. 「权限管理」开通权限（可用「批量导入/导出权限」粘贴下方 JSON）：
+   - 必需：`im:message.p2p_msg:readonly`、`im:message.group_at_msg:readonly`、`im:message:send_as_bot`
+   - 可选：`contact:contact.base:readonly` + `contact:user.base:readonly`（显示姓名），
+     `im:message.reactions:write_only`（处理中显示表情），`im:chat:readonly`（显示群名），
+     `im:message:readonly`（读取你发的图片，以及下文说的聊天上下文：你回复的那条消息、转发给 Bot 的聊天记录），
+     `im:message.group_msg`（读取话题里前面的消息；敏感权限，需管理员审核）
+4. 在「凭证与基础信息」复制 App ID 和 App Secret，填到 Bot 的「应用 → 飞书」并保存。长连接会上线；
+   如果提示开启机器人，说明还没发布版本，长连接此时已在线，不影响下一步。
+5. 保持 Harness 运行，到「事件与回调」→「事件配置」把订阅方式改为「使用长连接接收事件」并保存（必须有长连接在线才能保存）。
+6. 「添加事件」→ 添加 `im.message.receive_v1`（接收消息）。
+7. 「版本管理与发布」→ 创建版本，可用范围包含要使用的人 → 发布（可能需要管理员审核）。
+8. 在飞书里打开和机器人的单聊（搜索应用名，或点面板里的「在飞书中打开」），发送配对码。群聊里先把机器人拉进群，再 @ 它。
 
-Use an app made for this team only: when several programs connect with the same App ID, Feishu hands each
-message to just one of them.
+请用专门给这个团队新建的应用：同一个 App ID 有多个程序连着时，每条消息只会交给其中一个。
 
-**Images.** Send a picture, or a rich-text message with pictures in it, and the bot sees them as it does images
-you attach in the panel: the chat shows them, and the dispatcher hands them on with the work. The channel reads
-them from Feishu only once it knows the message is yours (paired) and for the bot, at most ten per message, each
-up to 20 MB (PNG, JPEG, WebP or GIF). Where a picture was, the text says `[image]`, so a picture that could not be
-read (no `im:message:readonly` permission, too big, another format) still shows the bot that one was there; the
-Harness log says why it was left out.
+**图片。** 发一张图，或者发带图的富文本消息，Bot 看到的和你在面板里附的图一样：聊天里显示缩略图，调度员派活时会把图一起交给队友。频道只在确认这条消息是你（已配对）发给 Bot 的之后才去飞书取图，每条最多十张，每张不超过 20 MB（PNG、JPEG、WebP 或 GIF）。图原来在哪，正文那里就写 `[image]`，所以取不到的图（没开 `im:message:readonly` 权限、太大、格式不支持）Bot 也知道那里原本有张图；Harness 日志会写明为什么没取到。
 
-**Chat context.** When your message replies to another one, sits in a topic or reply chain, or is chat
-history you forwarded to the bot, the channel reads that from Feishu before the team sees your message:
-the message you reply to, the start of the chain or the topic's last ten messages, and up to thirty
-forwarded messages (files and images by name). The dispatcher reads them with your message, and the task
-it opens keeps your own words and that context, with the chat's ids for a bot that has the Feishu / Lark
-Open Platform app, so the bot doing the work knows what "this" means. Those messages are often written by people
-you did not pair (colleagues in the group): what they wrote then goes to the bots' model and into `tickets.json`,
-as it would if you pasted it in yourself. It is only read when a paired person's message points at it (a reply, a
-topic, a forward); the permissions are the switch, so leave `im:message:readonly` off to keep it out, and let the
-people in a group with the bot know. Chat history you forward on its own also goes with
-the task you open from your next message ("summarize this"), sent within ten minutes. Without the permissions above
-the message goes on as before, and the Harness log says which permission to add.
+**聊天上下文。** 你的消息如果回复了另一条消息、发在话题或回复串里，或者是转发给 Bot 的聊天记录，频道会先从飞书读出这些内容，再交给团队：你回复的那条消息、回复串的第一条或话题里最近十条消息、最多三十条转发的消息（文件和图片只写名字）。调度员和你的消息一起读到它们；它开出的任务会留着你的原话和这段上下文，还有这个聊天的 ID，装了「飞书开放平台」应用的 Bot 可以接着往下查。这样干活的 Bot 知道你说的"这个"指什么。这些消息常常是没配对的人写的（群里的同事）：他们的话会发给 Bot 用的模型，也会存进 `tickets.json`，和你自己把它粘贴进来一样。只有配对者的消息指向它们时（回复、话题、转发）才会读取；权限就是开关，不想让它们进来就别开 `im:message:readonly`，并让 Bot 所在群里的人知道这件事。单独转发的聊天记录，也会跟着你十分钟内发的下一条消息（比如"总结一下"）进到它开出的任务里。没开上面的权限时，消息照常送达，Harness 日志会提示该开哪个权限。
 
 ```json
 {"scopes":{"tenant":["im:message.p2p_msg:readonly","im:message.group_at_msg:readonly","im:message:send_as_bot","im:message.reactions:write_only","contact:contact.base:readonly","contact:user.base:readonly","im:chat:readonly","im:message:readonly"],"user":[]}}
@@ -606,21 +456,19 @@ the message goes on as before, and the Harness log says which permission to add.
 
 ### Slack
 
-Slack uses Socket Mode: the Harness connects out to Slack, so your computer needs no public address.
+Slack 走 Socket Mode：由 Harness 主动连到 Slack，电脑不需要公网地址。
 
-1. Open https://api.slack.com/apps → **Create New App** → **From a manifest**, pick your workspace, choose
-   the JSON tab and paste the manifest below (rename "Bot Team" if you like) → **Next** → **Create**.
-2. **Install App** → **Install to Workspace** → **Allow**. Copy the **Bot User OAuth Token** (`xoxb-…`).
-3. **Basic Information** → **App-Level Tokens** → **Generate Token and Scopes**: any name, **Add Scope** →
-   `connections:write`, **Generate**, and copy the token (`xapp-…`).
-4. In Bots, open the bot → **Apps** → add **Slack**, paste both tokens and save. Once it shows
-   *Connected*, a pairing code appears.
-5. In Slack, open the app (**Open in Slack** next to the code, or Apps → your app → Messages) and send it
-   the code.
-6. To use it in a channel, invite the app (`/invite @Bot Team`) and @mention it; it answers in the thread.
+1. 打开 https://api.slack.com/apps → **Create New App** → **From a manifest**，选择工作区，切到 JSON 标签，
+   粘贴下方清单（"Bot Team" 可以改名）→ **Next** → **Create**。
+2. **Install App** → **Install to Workspace** → **Allow**，复制 **Bot User OAuth Token**（`xoxb-…`）。
+3. **Basic Information** → **App-Level Tokens** → **Generate Token and Scopes**：名字随意，**Add Scope** 选
+   `connections:write`，点 **Generate**，复制 Token（`xapp-…`）。
+4. 在 Bots 里打开这个 Bot → **应用** → 添加 **Slack**，填入两个 Token 并保存。显示「已连接」后会出现配对码。
+5. 在 Slack 里打开这个应用（点配对码旁的「在 Slack 中打开」，或 Apps → 你的应用 → Messages），把配对码发给它。
+6. 想在频道里用：先把应用邀请进频道（`/invite @Bot Team`），再 @ 它；它会在那条消息的讨论串里回复。
 
-Use one Slack app per bot, and don't run the same app in another program: Slack hands each message to only
-one connection. If you change scopes later, reinstall the app to the workspace and press **Reconnect**.
+每个 Bot 用一个单独的 Slack 应用，不要让别的程序同时使用同一个应用（Slack 每条消息只交给其中一个连接）。
+以后改了权限，要重新安装到工作区，再点「重新连接」。
 
 ```json
 {
@@ -645,196 +493,138 @@ one connection. If you change scopes later, reinstall the app to the workspace a
 }
 ```
 
-### What else to know
+### 其他须知
 
-- **Who can talk to it**: only people you paired. Anyone else is ignored; in a private chat they get at
-  most one "this bot is private" line a day. Pairing happens only in a private chat, with the current
-  code, and a few wrong guesses lock a person out until the next code. You can pair more people (each
-  needs a new code) and remove anyone from the panel; the panel also counts ignored messages.
-- **Treat a pairing like your own login**: a paired person can ask the bots for anything you could,
-  including whatever their abilities and apps allow on this Mac. Pair only yourself or people you trust,
-  and turn off risky abilities on the bot that owns the channel if others are paired.
-- **Where replies go**: to the chat the request came from, and a task's result to the chat that task was
-  asked from (see [Chats and threads](#chats-and-threads)). Write in the panel and the answer stays in the
-  panel. Telegram gets plain text (Markdown markers removed); Discord, Slack and Feishu show the Markdown.
-  In a Slack channel the answer goes into the thread of your message.
-- **Scheduled reports**: a scheduled task of the bot that owns the channel reports to the first paired
-  person (switch it off in the panel), so "every weekday at nine Atlas briefs you" lands on your phone.
-- **One token, one place**: a chat bot token can be connected on one bot of one Harness at a time. If
-  another program uses the same Telegram token, the panel says so.
-- The token is stored with the bot like other app keys, never shown back in the panel, and kept out of
-  logs and error messages. Harness must be running for the bot to answer; Telegram holds messages for up
-  to 24 hours, and a message is never run twice after a restart.
+- **谁能和它说话**：只有你配对过的人。其他人一律忽略；在私聊里最多每天收到一句「这是私人 Bot」。
+  配对只能在私聊里用当前配对码完成，猜错几次就会被锁定，直到生成新码。可以配对多个人（每人需要一个新码），
+  也可以在面板里移除任何人；面板还会统计被忽略的消息数。
+- **配对等同于你自己的登录**：配对的人能让 bot 做你能做的任何事，包括它们的能力和应用在这台 Mac 上允许的操作。
+  只配对你自己或你信任的人；如果配对了别人，请在拥有该聊天应用的 bot 上关掉有风险的能力。
+- **回复发到哪里**：发到请求来自的那个聊天；任务的结果发到这个任务来自的聊天（见[聊天与讨论串](#聊天与讨论串)）。
+  在面板里发的消息，回复留在面板。Telegram 收到纯文本（去掉 Markdown 标记）；Discord、Slack 和飞书会显示 Markdown 格式。在 Slack 频道里，回复发在你那条消息的讨论串里。
+- **定时汇报**：拥有聊天应用的 bot 的定时任务会把结果发给第一个配对的人（可在面板里关闭），
+  于是「工作日早上九点 Atlas 给你做简报」会直接出现在你手机上。
+- **一个 Token 只能在一处使用**：同一个聊天 Bot Token 同时只能连在一个 Harness 的一个 bot 上。
+  如果有别的程序在用同一个 Telegram Token，面板会提示。
+- Token 和其他应用的 Key 一样保存在 bot 里，面板里不会再显示出来，也不会出现在日志和错误信息里。
+  Harness 运行时 Bot 才会回复；Telegram 最多替你保存 24 小时内的消息，重启后同一条消息不会被执行两次。
 
-## Hand work out from GitHub issues
+## 从 GitHub issue 派活
 
-Add **GitHub Issues** to your dispatcher (Apps → Team & office) with a fine-grained token limited to the
-repositories you name, with Issues: read and write. Put the label (`bots`, unless you set another) on an open issue,
-and the team takes it:
+在调度员的应用里添加 **GitHub Issues**（应用 → 团队与办公），填一个细粒度令牌（只授权你填的那些仓库，权限 Issues：读写）
+和要关注的仓库。给打开的 issue 打上标签（默认 `bots`），团队就会接手：
 
-- **The issue becomes a card** on the board: its title, its body as the description, a link to it, and, when a
-  project has that repository (**GitHub repository** in the project), filed under that project and numbered there.
-  The dispatcher gets it in that issue's thread, and hands the work out as for any card.
-- **Answers are comments** on the issue, signed `【Forge】` like in a chat app, so everyone who can see the repository
-  reads them. A comment on the issue later goes to its task when one is working on it, else to the dispatcher.
-- **Only the repository's owner, members and collaborators start work**: an issue counts when one of them wrote it or
-  put the label on it (an issue form can add a label for anyone), a comment when one of them wrote it. Everyone else is
-  ignored without an answer; the panel counts them. Issues are read by the bots, so this keeps strangers' text out of
-  their prompts.
-- **No public address**: Harness asks GitHub every minute for labelled issues and new comments (with an ETag, so an
-  unchanged answer costs no rate limit). Issues labelled while Harness was closed are caught up when it starts. On its
-  first start it looks from then on: label an older issue again to hand it out.
-- The token's account is the one that comments; a bot account of its own reads best. Its own comments (and anything
-  marked `<!-- dsh-bots -->`) are never read back as messages.
-- **GitHub Enterprise**: write the repositories as their addresses (`https://github.example.com/owner/repo`), and make
-  the token on that server. The app then talks to the server's API (`/api/v3`, or `api.<name>.ghe.com` on GHE.com). One
-  app watches one server; add it once more for another. A project's **GitHub repository** takes the same address.
+- **issue 变成看板上的一张卡**：标题、正文（作为描述）、指向 issue 的链接；有项目填了这个仓库（项目里的 **GitHub 仓库**）时，
+  归到那个项目下并在那里编号。调度员在这个 issue 的讨论串里收到它，像处理其他卡片一样分派。
+- **回复是 issue 下的评论**，和聊天应用一样署名 `【Forge】`，能看到仓库的人都能看到。之后 issue 下的新评论，有任务在做时直接交给那个任务，
+  否则交给调度员。
+- **只有仓库的 owner、成员和协作者能让团队开工**：issue 要是他们写的或者是他们打的标签（issue 表单可能替任何人打标签），
+  评论要是他们写的。其他人的一律忽略、不做回复，面板上会计数。bot 会读 issue 的内容，这样陌生人写的东西进不了它们的提示词。
+- **不需要公网地址**：Harness 每分钟向 GitHub 查一次带标签的 issue 和新评论（带 ETag，内容没变时不占用额度）。Harness 关着的时候打的标签，
+  启动后会补上。第一次启动只看此后的变化：更早的 issue 要重新打一次标签才会交出去。
+- 评论用的是令牌所属的账号，最好用一个专门的机器人账号。它自己的评论（以及带 `<!-- dsh-bots -->` 标记的内容）不会被当成新消息读回来。
+- **GitHub Enterprise**：仓库写成地址（`https://github.example.com/owner/repo`），令牌在那台服务器上生成。应用会连那台服务器的 API
+  （`/api/v3`；GHE.com 是 `api.<名字>.ghe.com`）。一个应用只连一台服务器，另一台就再添加一次。项目的 **GitHub 仓库** 也填这个地址。
 
-## How it works
+## 原理
 
-- Each bot has a home conversation in Harness and a separate conversation for each task (`ticket-<id>`).
-  Set `bots.config.workdirs` by handle (for example, `workdirs: { forge: /projects/forge }`) to use that folder
-  for Forge's new home conversations and tasks received without a project. If the handle has no entry or the path
-  is not an existing directory, they use the shared **Bots** workspace (`workdir`, default `~/.dsh/bots/workspace`).
-  Project tasks use the project's folder, or the shared workspace if the project has no folder set. Harness archives
-  a task's conversation once the task has been over for the hours set in Settings. Each thread is a conversation too, forked with Harness's session fork
-  from the bot's conversation at the message replied to and titled "<bot> · <the start of that message>"; it is
-  archived after a quiet day and taken out of the archive on the next reply.
-- When it runs, the bot's persona and the team roster join its system prompt; its own skills, ability
-  limits and apps apply to its conversations only. In a task's conversation the prompt also says which
-  task it is, who asked, and how to report, and for a task of a project, the project's brief and folder. The
-  dispatcher's prompt lists the projects. Edits apply at once; a new or changed app connects the next
-  time the conversation starts.
-- `bot_send_message` from a bot's own conversation opens a task and returns at once; from a task's
-  conversation it reports to whoever asked (with a status) or opens a sub-task. A message to the dispatcher
-  opens no task: it goes into the dispatcher's own conversation (one sent from a task names it, and the
-  dispatcher's answer is added to that task). The dispatcher names the request a task serves with `need`
-  ([The board](#the-board-every-request-as-a-card-filed-under-projects)). Two bots may exchange at most 16 messages in 10
-  minutes (new tasks and messages added to tasks count), so conversations end.
-- A bot with nothing to say (after a report, say) answers `NO_REPLY`, which is never shown or sent to a chat app.
-  Harness counts an answer with no content as a failed model call (`returned a completed response with no
-  content`), so a bot cannot just say nothing; should a model still answer with nothing, its task does not fail
-  for it.
-- Every conversation gets `bot_list`, `bot_create`, `bot_update`, `bot_delete`, `bot_send_message`,
-  `bot_reply`, `bot_recall`, `bot_ticket`, `bot_need` and `bot_schedule` to manage bots and tasks, and `memory_save`,
-  `memory_forget` and `memory_search`. `bot_reply` sends an answer to a named chat; `bot_recall` reads a
-  task, its reports or its conversation, or a chat thread, a page at a time, so a bot looks things up
-  instead of guessing; `bot_ticket` stops, closes or retries a task the bot asked for, or asks it for a
-  status report; `bot_need` lets the dispatcher rename, merge, drop, finish or file one of your requests (by its id or its card, `OPC-12`). [API.md](https://github.com/kadaliao/dsh-bots/blob/main/API.md) lists their parameters. A sub-agent started in a bot's or a task's
-  conversation uses them as that bot or task; one that cannot be traced back to where it started (that
-  conversation is gone) is refused.
-- A bot's memory is a section of its system prompt, read when a topic or a task's conversation starts
-  (and at the next run after a memory edit in the panel or the nightly consolidation), never in the middle
-  of a run. A run ends when the bot's Agent is idle; its transcript (prompts, replies, tool calls, short
-  tool results), or for a task the transcript of its runs, is what the memory pass reads. Usage comes
-  from the `assistant/message` and `compaction/summary` events of the bots' conversations, plus the
-  plugin's own memory calls.
-- A chat app is not an MCP server: the Host keeps one connection per chat app (long polling for Telegram,
-  the gateway for Discord, Socket Mode for Slack, the long connection for Feishu), starts and stops it as you add, change, switch off or remove the
-  app, and hands paired people's messages to the bot as user prompts headed
-  `[Telegram · Name] (thread <key>)`, or to the tasks or the own conversation of that thread (see
-  [Chats and threads](#chats-and-threads)). The thread key is what `bot_reply` names. The chat context a
-  connector reads with a message (Feishu does) follows it as one more block, `[Chat context, read from Feishu with
-  this message]`. GitHub Issues polls instead:
-  each repository is a chat, each issue a thread, and its cursors are kept in `channels.json`.
+- 每个 bot 有一个 Harness 主会话，每个任务另有一个会话（`ticket-<id>`）。在 `bots.config.workdirs` 里按 handle 指定目录
+  （例如 `workdirs: { forge: /projects/forge }`）后，Forge 新建的主会话和收到的无项目任务都会使用这个目录。
+  未配置该 handle 或路径不是现存目录时，使用共享的 **Bots** 工作区（`workdir`，默认 `~/.dsh/bots/workspace`）。
+  有项目的任务使用项目目录，项目未设置目录时使用共享工作区。任务结束超过设置里的小时数后，它的会话在 Harness 里归档。
+  每个讨论串也是一个会话：用 Harness 的会话分叉，从 bot 的会话在被回复的那条消息处分出来，标题是「bot 名 · 那条消息的开头」；
+  一天没有动静就归档，再回复时取消归档接着用。
+- 会话运行时，bot 的人设和团队名单加入系统提示词；它自己的技能、能力限制和应用只作用于它自己的会话。
+  任务的会话里，提示词还会说明这是哪个任务、谁发起的、怎么汇报；项目的任务还有项目简介和目录。调度员的提示词里有项目列表。修改即时生效；新增或修改应用在下次会话启动时连接。
+- `bot_send_message` 在 bot 自己的会话里调用就开一个任务并立刻返回；在任务的会话里调用，
+  要么带状态向发起方汇报，要么开一个子任务。发给调度员的不开任务，放进它自己的会话（从任务里发的会注明是哪个任务，
+  调度员回话时追加到那个任务）。调度员开任务时用 `need` 说明它属于你的哪件事（见[看板](#看板每件事一张卡按项目归档)）。
+  同一对 bot 10 分钟内最多互发 16 条（新开的任务和追加给任务的消息都算），防止无限对话。
+- bot 没话可说时（比如发完汇报之后）回复 `NO_REPLY`，这句话不显示、也不发到聊天应用。Harness 把内容为空的回复当成调用失败
+  （`returned a completed response with no content`），所以 bot 不能真的什么都不说；万一模型还是回了空，任务也不会因此判失败。
+- 所有会话都能用 `bot_list`、`bot_create`、`bot_update`、`bot_delete`、`bot_send_message`、`bot_reply`、`bot_recall`、
+  `bot_ticket`、`bot_need`、`bot_schedule` 管理 bot 和任务，以及 `memory_save`、`memory_forget`、`memory_search`。
+  `bot_reply` 把答复发到指定的聊天；`bot_recall` 分页读取任务、任务的汇报或会话，以及聊天讨论串，让 bot 去查而不是猜；
+  `bot_ticket` 停止、关闭或重试自己发起的任务，或者请它汇报进度；`bot_need` 让调度员给你的需求改标题、合并、取消、标记完成或归到项目（用需求 id 或卡片编号 `OPC-12` 都行）。参数见 [API.md](https://github.com/kadaliao/dsh-bots/blob/main/API.md)。
+  在 bot 或任务的会话里启动的子代理，以那个 bot 或任务的身份使用这些工具；追溯不到来源（启动它的会话已经不在）的子代理会被拒绝。
+- bot 的记忆是它系统提示词里的一段，在话题或任务的会话开始时读取（面板里改了记忆或每晚整理后，在下一个回合开始时重读），
+  回合进行中不会变。bot 的 Agent 空闲时回合结束；记忆总结读的是这个回合的过程（提示、回复、工具调用和简短的工具结果），
+  任务则读它各个回合的过程。用量来自 bot 会话的 `assistant/message` 和 `compaction/summary` 事件，
+  再加上插件自己的记忆调用。
+- 聊天应用不是 MCP 服务：Host 为每个聊天应用保持一个连接（Telegram 用长轮询，Discord 用 Gateway，Slack 用 Socket Mode，飞书用长连接），
+  随你添加、修改、关闭或删除应用而启动和停止，并把配对者的消息作为用户提示交给 bot，开头标着 `[Telegram · 名字] (thread <key>)`；
+  讨论串里的跟进则交给那个讨论串的任务或它自己的会话（见[聊天与讨论串](#聊天与讨论串)）。`bot_reply` 用的就是这个 key。
+  连接器和消息一起读到的聊天上下文（飞书会读）跟在消息后面，单独一段，开头是 `[Chat context, read from Feishu with this message]`。
+  GitHub Issues 改用轮询：每个仓库是一个聊天，每个 issue 是一个讨论串，查到哪里的游标存在 `channels.json` 里。
 
 ## Open Computer Use
 
-[open-computer-use](https://github.com/kadaliao/open-computer-use) lets a bot operate macOS apps through
-the accessibility tree. Click **Install now** on its card, then grant **DeepSeek Harness** Accessibility
-permission and restart it.
+[open-computer-use](https://github.com/kadaliao/open-computer-use) 让 bot 通过无障碍树操作 macOS 应用。在应用页点「一键安装」，
+然后给 **DeepSeek Harness** 授予辅助功能权限并重启。
 
-## Images
+## 图片
 
-[Images](https://github.com/kadaliao/dsh-images) (`@kadaliao/dsh-images`) gives the bots a `generate_image`
-tool, on your provider's image model: pictures, posters, GIFs, and the bots' AI avatars. It is featured in the
-gallery beside Open Computer Use. It is a Harness plugin rather than an MCP server, so one install serves every
-bot: click **Install now** on its card and Harness's plugin manager installs it from npm (a card that says
-**Turned off** switches it back on instead). Then open the **Images** panel in the sidebar and choose the image
-model under **Settings**. Harness may pick a release a little older than the newest when the newest is only
-hours old; Images then offers the update itself.
+[图片插件](https://github.com/kadaliao/dsh-images)（`@kadaliao/dsh-images`）给 bot 一个 `generate_image` 工具，用你供应商的生图模型画图、
+海报、动图，bot 的 AI 头像也靠它。它和 Open Computer Use 一样排在应用库最前面的推荐里。它是 Harness 插件，不是 MCP 服务，
+所以装一次所有 bot 都能用：在它的卡片上点「一键安装」，由 Harness 的插件管理器从 npm 装上（卡片显示「已关闭」时，点一下是把它重新打开）。
+装好后打开左侧栏的「图片」面板，在「设置」里选好生图模型。最新版发布才几个小时的话，Harness 可能先装上稍早的一版，
+之后图片插件自己会提醒更新。
 
-Every bot can draw once it is installed, except a dispatcher that only hands out work. **Abilities** on a bot's
-Profile page turns **Image generation** off for that bot, and **Add** on the card turns it back on.
+装好后每个 bot 都能画图，只派活的调度员除外。在 bot 资料页的「能力」里可以给某个 bot 关掉「AI 作图」，在卡片上点「添加」再打开。
 
-## What it stores and sends
+## 存储与外发
 
-- `~/.dsh/cache/bots/` (`bots.json`, `channels.json` and `tickets.json` are readable by your user only):
-  `bots.json` (bots, including keys and chat bot tokens entered for apps),
-  `messages.jsonl` (timeline), `channels.json` (paired people per chat app, and the last message handled
-  per chat), `tickets.json` (tasks, with what was asked and their reports, the chat threads they came
-  from, and the chat message that started each, with the chat context read with it; the newest 500 archived tasks are kept), `avatars/`, `skills/` (skills imported from GitHub),
-  `memory/` (notes — each bot's, the shared ones and each project's —, journal, digests), `usage.jsonl` and `tasks.jsonl` (token counts per call and run,
-  kept 400 days), `topics.json`, `discussions.json` (threads, where each message sits in its conversation, threads
-  you have read), `needs.json` (your requests: the cards on the board, with your words and descriptions) and
-  `projects.json` (projects, with their folders and briefs), both readable by your user only, `settings.json`
-  (with your own teams' names), `images.json` (which images messages and tasks carry, by id), `price-catalog.json`. If `tickets.json` cannot be read
-  (permissions, say), Bots does not start and says why in the Harness log, so the file is never written over;
-  a damaged one is kept as `tickets.json.corrupt-<time>` and tasks start empty.
-- Images you send are stored by Harness's own attachment store (`~/.dsh/attachments/`), as images pasted into a
-  Harness chat are, and go to the bot's model with the message; Harness keeps them, Bots only their ids.
-- A file you reference is not copied: the message and the tasks it leads to keep its full path (in the timeline and
-  `tickets.json`), and the bot's model sees what the bot reads of it.
-- Custom endpoints and a borrowed Codex login are written to Harness's own model settings (`llm-pi-ai`) and
-  credential store. With the Codex login in use, tokens Harness refreshes are written back to
-  `~/.codex/auth.json`.
-- Nothing leaves your machine except through the bots' own conversations (your configured model), the
-  memory passes (a run's or a task's transcript and the bot's notes, to the bot's model or the memory model), the
-  LiteLLM price list (downloaded from GitHub weekly), the apps you connect, the image model when you generate an avatar, GitHub when you import skills, and the
-  Feishu / Lark, Telegram, Slack or Discord API when you connect a chat app (the bots' replies to paired
-  people, typing indicators, and the one-line note to strangers; Feishu is also asked for the messages a paired
-  person's message replies to, the topic it is in, or the chat history they forwarded to the bot; those may be other
-  people's words, unpaired ones too, and they go to the bots' model with the request and are kept with its task,
-  and for the images in a paired person's message to the bot), and the GitHub API with GitHub Issues (reading the
-  watched repositories' labelled issues and comments, and posting the bots' answers as comments).
+- `~/.dsh/cache/bots/`（`bots.json`、`channels.json` 和 `tickets.json` 只有你自己的账户能读）：`bots.json`（bot，含应用里填的 Key 和聊天 Bot Token）、`messages.jsonl`（时间线）、
+  `channels.json`（每个聊天应用的配对者，以及每个聊天处理过的最后一条消息）、`tickets.json`（任务：交代的内容、汇报、
+  它们来自的聊天讨论串，以及开出任务的那条聊天消息和一起读到的聊天上下文；已归档的任务保留最新的 500 个）、`avatars/`、`skills/`（从 GitHub 导入的技能）、
+  `memory/`（笔记——每个 bot 的、共享的和每个项目的——、工作日志、每日摘要）、`usage.jsonl` 和 `tasks.jsonl`（每次调用和每个回合的 tokens，保留 400 天）、
+  `topics.json`、`discussions.json`（讨论串、每条消息在会话里的位置、看过的讨论串）、`needs.json`（你的需求，也就是看板上的卡片，
+  含你的原话和描述）和 `projects.json`（项目，含目录和简介），这两个只有你自己的账户能读，`settings.json`（含你给团队起的名字）、`images.json`（哪些消息和任务带了哪些图片，只记 id）、`price-catalog.json`。`tickets.json` 读不出来（比如权限不对）时，Bots 不会启动，
+  并在 Harness 日志里说明原因，这样文件不会被覆盖；文件损坏时，会改名保存为 `tickets.json.corrupt-<时间>`，任务从空白开始。
+- 你发的图片和在 Harness 对话里粘贴的图片一样，存进 Harness 自己的附件库（`~/.dsh/attachments/`），随消息发给 bot 的模型；
+  图片本身由 Harness 保存，Bots 只记 id。
+- 你引用的文件不会被复制：消息和由它开出的任务只记下文件的完整路径（在时间线和 `tickets.json` 里），bot 读了文件的哪些内容，它的模型就看到哪些内容。
+- 自定义端点和借用的 Codex 登录写在 Harness 自己的模型设置（`llm-pi-ai`）和凭据库里。使用 Codex 登录时，
+  Harness 刷新得到的令牌会写回 `~/.codex/auth.json`。
+- 除了 bot 自身会话（你配置的模型）、记忆整理（把回合或任务的过程和 bot 的笔记发给 bot 的模型或记忆模型）、LiteLLM 价格表（每周从 GitHub 下载一次）、你连接的应用、生成头像时的图片模型、导入技能时访问 GitHub，
+  以及连接聊天应用后访问飞书 / Lark、Telegram、Slack、Discord 的 API（给配对者的回复、正在输入提示、给陌生人的那一句提示；飞书还会被问到配对者的消息所回复的那条、所在的话题，或转发给 bot 的聊天记录；其中可能有别人的话，包括没配对的人，它们会随请求发给 bot 的模型，并和任务一起保存；配对者发给 bot 的消息里有图片时，也会去飞书取图），
+  和使用 GitHub Issues 时访问 GitHub API（读取所关注仓库里带标签的 issue 和评论，把 bot 的回复发成评论），不向外发送任何内容。
 
-## Install
+## 安装
 
-Add the [DSH Plugins](https://github.com/kadaliao/dsh-plugins) index in DeepSeek Harness (**Plugins → Discover → Sources**):
+在 DeepSeek Harness 里加入 [DSH Plugins](https://github.com/kadaliao/dsh-plugins) 的索引（**Plugins → Discover → Sources**）：
 
 ```
 https://raw.githubusercontent.com/kadaliao/dsh-plugins/main/marketplace.json
 ```
 
-then install **Bots**. The Discover tab is part of the experimental **Custom plugin markets**
-feature; turn it on under **Plugins → Experimental plugins** if you don't see it.
+然后安装 **Bots**。Discover 标签属于实验性的 **Custom plugin markets** 功能；看不到的话先在
+**Plugins → Experimental plugins** 里打开。
 
-Without Discover, paste the package name into the plugin manager:
+不用 Discover 的话，把包名贴进插件管理器：
 
 ```
 @kadaliao/dsh-bots
 ```
 
-For the latest unreleased code, use the Git spec `git+https://github.com/kadaliao/dsh-bots.git#main` instead.
+想用还没发布的最新代码，改用 Git spec `git+https://github.com/kadaliao/dsh-bots.git#main`。
 
-Refresh the page once after installing. For pictures and AI avatars, install [Images](#images) too: one click
-on its card in any bot's **Apps** page.
+安装后刷新一次页面。想要画图和 AI 头像，再装上[图片插件](#图片)：在任意 bot 的「应用」页里它的卡片上一键安装。
 
-## Updates
+## 更新
 
-Each time you open the Bots panel, the plugin checks whether a newer version of itself is out; opening
-it again within a minute reuses the answer, and nothing checks in the background. The check goes
-through Harness's own plugin manager, the same check as the Versions section in **Plugins**, and asks
-the npm registry only about this package. A newer version shows as a bar across the top of the panel.
-**Update** has Harness install it, after checking that it works with your Harness; if the install
-fails, the version you had is put back. While it updates, the panel closes, and it opens again once
-the new version is in. **Later** hides the bar for a day, **Skip this version** until the next one.
-Copies installed from a folder or from Git are not checked.
+每次打开Bots 面板，插件会检查一次自己有没有新版本；一分钟内再打开用上次的结果，后台不定时检查。检查走 Harness 自己的插件管理，和「插件」页「版本」一栏是同一个检查，只向 npm 查询这一个包。有新版本时，面板顶部会出现一条提示：点「更新」由 Harness 安装新版本，装之前先确认它和你的 Harness 兼容，装失败会把原来的版本装回去。更新时面板会先关闭，装好后自动重新打开。「稍后」一天内不再提醒，「跳过此版本」到下一个版本出来前不再提醒。从本地文件夹或 Git 装的不检查。
 
-What each version changed, and what to do after upgrading, is in the [changelog](https://github.com/kadaliao/dsh-bots/blob/main/CHANGELOG.md).
+每个版本改了什么、升级后要做什么，见[更新日志](https://github.com/kadaliao/dsh-bots/blob/main/CHANGELOG.md)。
 
-## Limits
+## 限制
 
-- Web UI only.
-- Group chats between bots are not there yet; bots work together through tasks and direct messages.
-- In a group chat a bot hears only messages that @mention it (or reply to it); it does not listen to the
-  rest of the conversation.
-- A thread doesn't see the main chat's later messages because it is a fork, and a fork needs the message's place in
-  the conversation's log. For a very old message whose place cannot be found, the thread forks at the latest turn and
-  sees what came after (the bot is told so).
-- The watchdog goes by time and status only; it does not judge whether a task is heading the right way.
-- Costs are estimates. Gateways, subscriptions and discounts bill differently; set your own prices.
-- Only the Codex CLI's login can be borrowed so far; other subscriptions sign in from Harness Settings →
-  Models where Harness supports them.
-- Harness skills a team template names that you don't have are skipped; import them from GitHub or have
-  the bot write them later.
+- 仅 Web 界面。
+- 暂无 bot 群聊，bot 之间通过任务和私信协作。
+- 在群聊里，bot 只听 @ 它（或回复它）的消息，不旁听群里的其他对话。
+- 讨论串看不到主对话后来的内容，靠的是会话分叉；可分叉的位置要能在会话记录里找到。很旧的消息找不到位置时，
+  讨论串从会话最新处分出来，看得到后面的内容（bot 会被告知这一点）。
+- 看门狗只看时间和状态，不判断任务的方向对不对。
+- 费用是估算，网关、订阅和折扣的实际计费会不同；可以填自己的价格。
+- 目前只能借用 Codex CLI 的登录；其他订阅请在 Harness 支持的情况下，到 设置 → 模型 里登录。
+- 团队模板引用的 Harness 技能，你没装的会被跳过；可以之后再从 GitHub 导入或让 bot 自己写。

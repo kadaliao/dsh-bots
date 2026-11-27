@@ -2,7 +2,7 @@
 
 How the Host (`index.js` and `lib/`, running in Harness) and the Client (`client.js`, the panel) talk, what the bots'
 tools do, and what the plugin stores. It describes the current version; what changed in each version is in
-[CHANGELOG.md](CHANGELOG.md).
+[CHANGELOG.md](CHANGELOG.en.md).
 
 ## Contents
 
