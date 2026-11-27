@@ -5013,6 +5013,8 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
     const imageFiles = (files) => Array.from(files ?? []).filter((f) => f && /^image\/(png|jpeg|webp|gif)$/.test(String(f.type)));
     /** Whether a drag carries files (an image dropped on the composer). */
     const dragsFiles = (e) => Array.from(e?.dataTransfer?.types ?? []).includes('Files');
+    /** A dropped file's full path, when the desktop shell tells it (`File.path`); '' in a browser. */
+    const droppedPath = (f) => (typeof f?.path === 'string' && /^(\/|[A-Za-z]:[\\/])/.test(f.path) ? f.path : '');
     const objectUrl = (file) => {
       try {
         return URL.createObjectURL(file);
@@ -5039,19 +5041,22 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
      * (picked, pasted or dropped), so sending only names them. `{list, add(files), remove(key), clear(), images, busy}`:
      * `images` are the stored ones, `busy` while one is still on its way. And the files it references (`files`:
      * a path in the conversation's folder, or the full path of a file elsewhere; `addFile(path)`,
-     * `removeFile(path)`), chosen in the picker (`picking`).
+     * `removeFile(path)`), chosen in the picker (`picking`; a drop opens it searching `seek.q`).
      */
     function useAttachments(t, toast) {
       const [list, setList] = useState([]);
       const [files, setFiles] = useState([]);
       const [picking, setPicking] = useState(false);
+      const [seek, setSeek] = useState(null);
       const live = useRef(list);
       live.current = list;
-      const addFile = (path) => {
-        if (files.includes(path)) return;
-        if (files.length >= MAX_ATTACH) toast?.(t('filesMax', { n: MAX_ATTACH }), 'error');
-        else setFiles((l) => (l.includes(path) || l.length >= MAX_ATTACH ? l : [...l, path]));
+      const addFiles = (paths) => {
+        const fresh = paths.filter((p, i) => !files.includes(p) && paths.indexOf(p) === i);
+        if (!fresh.length) return;
+        if (files.length + fresh.length > MAX_ATTACH) toast?.(t('filesMax', { n: MAX_ATTACH }), 'error');
+        setFiles((l) => [...l, ...fresh.filter((p) => !l.includes(p))].slice(0, MAX_ATTACH));
       };
+      const addFile = (path) => addFiles([path]);
       const removeFile = (path) => setFiles((l) => l.filter((p) => p !== path));
       const add = (files) => {
         const picked = imageFiles(files);
@@ -5083,10 +5088,25 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         });
         setFiles([]);
         setPicking(false);
+        setSeek(null);
       };
-      // A file that is no image cannot be dropped in (the page never learns where it is): the picker references it.
-      const notImage = () => toast?.(t('dropNotImage'), 'error');
-      return { list, add, remove, clear, images: list.filter((a) => a.status === 'ready').map((a) => a.image), busy: list.some((a) => a.status === 'uploading'), files, addFile, removeFile, picking, setPicking, notImage };
+      const pick = (on) => {
+        setPicking(on);
+        if (!on) setSeek(null);
+      };
+      // Dropped files that are no images are referenced by their full path when the desktop shell tells it
+      // (`File.path`); the page alone never learns where a file is, so the picker opens on the first one's name.
+      const dropFiles = (dropped) => {
+        const paths = dropped.map(droppedPath).filter(Boolean);
+        if (paths.length) addFiles(paths);
+        const unknown = dropped.filter((f) => !droppedPath(f));
+        if (!unknown.length) return;
+        const name = str(unknown[0].name);
+        setSeek((s) => ({ q: name, n: (s?.n ?? 0) + 1 }));
+        setPicking(true);
+        toast?.(t('dropPickFile', { name }));
+      };
+      return { list, add, remove, clear, images: list.filter((a) => a.status === 'ready').map((a) => a.image), busy: list.some((a) => a.status === 'uploading'), files, addFile, removeFile, picking, setPicking: pick, seek, dropFiles };
     }
 
     /** The composer's handlers for images: pasted (a screenshot) or dropped on it. `drop` says one is being dragged over it. */
@@ -5115,8 +5135,11 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
             if (!dragsFiles(e)) return;
             e.preventDefault?.();
             setDrop(false);
-            // Files that are no images are left out: the composer takes text and images, and says where files go.
-            if (!att.add(e.dataTransfer.files)) att.notImage();
+            // Images are attached; other files are referenced (see `dropFiles`).
+            const dropped = Array.from(e.dataTransfer.files ?? []);
+            const images = imageFiles(dropped);
+            if (images.length) att.add(images);
+            att.dropFiles(dropped.filter((f) => !images.includes(f)));
           },
         },
       };
@@ -5160,10 +5183,11 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
      * opens the Host's folder dialog. One click references a file; it stays open for more.
      */
     function FilePicker(props) {
-      return props.att.picking ? h(FilePickerList, props) : null;
+      // A drop opens it anew, on the dropped file's name.
+      return props.att.picking ? h(FilePickerList, { ...props, key: props.att.seek?.n ?? 0 }) : null;
     }
     function FilePickerList({ t, att, scope, attr, env, full: fullPaths = false }) {
-      const [q, setQ] = useState('');
+      const [q, setQ] = useState(() => str(att.seek?.q));
       const settled = useDebounced(q, 200).trim();
       // A cleared box asks at once (as when another folder is chosen): the old words are not searched there.
       const asked = q.trim() === '' ? '' : settled;
@@ -10078,7 +10102,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         filePickerEmpty: 'No file matches',
         filePickerMore: 'More files match: type more of the name',
         filePickerFailed: 'The files could not be listed',
-        dropNotImage: 'Only images can be dropped here. To point the bot at a file, use "Reference a file".',
+        dropPickFile: 'The panel can\'t tell where "{name}" is: click it in the list to reference it.',
         openImage: 'Open the image',
         openImageNew: 'Open in a new window',
         prevImage: 'Previous image',
@@ -11247,7 +11271,7 @@ button.dshb-qline-light:hover{color:inherit;opacity:1}
         filePickerEmpty: '没有匹配的文件',
         filePickerMore: '还有更多匹配的文件，多输入几个字缩小范围',
         filePickerFailed: '读取文件列表失败',
-        dropNotImage: '这里只能拖入图片。想让 bot 看某个文件，请点「引用文件」。',
+        dropPickFile: '面板拿不到「{name}」所在的位置，请在列表里点它来引用。',
         openImage: '查看大图',
         openImageNew: '在新窗口打开',
         prevImage: '上一张',

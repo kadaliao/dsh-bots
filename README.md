@@ -123,8 +123,9 @@ bot answers in that message's **thread**.
   Harness's folder dialog and search there. The bot gets each file's full path and reads it with its own file tools
   and permissions, so nothing is uploaded or copied. Work handed on keeps the reference: a teammate working in another
   folder is pointed at the same file, not at a file of the same name in its own folder. A file that was moved or
-  deleted before you send is refused, saying so. Files cannot be dropped in: a browser does not tell the page where a
-  dropped file is, so only images are taken that way.
+  deleted before you send is refused, saying so. Files can be dropped on the box too: images are attached as ever,
+  and another file is referenced by its full path when Harness tells the panel where it is; otherwise (a browser does
+  not tell a page where a dropped file is) the picker opens searching its name, and one click references it.
 - **Reply to any message.** Hover over a message and click **Reply**: it is quoted above the box (**×** or Esc drops
   it), and what you send answers it. The bot answers in a conversation of its own, **forked from its conversation at
   that message**: it sees that message and everything before it, and nothing the main chat said after it. So when

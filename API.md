@@ -1317,8 +1317,9 @@ FileRef = { path: string /* the real, absolute path */, name: string /* for show
   searches a folder the person chooses, and `data-dsh-bots-file-dir-reset` goes back to the conversation's. Picked
   files show above the box (`data-dsh-bots-file-ref`, removed with `data-dsh-bots-file-ref-remove`). Messages and a
   task's assignment show a chip per file (`data-dsh-bots-msg-file`, the full path as its tooltip). A file that is no
-  image dropped on a composer is not taken (a page is not told where a dropped file is); the panel says to use the
-  picker.
+  image dropped on a composer (images dropped with it are attached) is referenced by its full path when the desktop
+  shell gives the dropped `File` an absolute `path`; otherwise (a page is not told where a dropped file is) the picker
+  opens anew searching the first such file's name, and the panel says to click it there. The ten-file limit holds.
 
 ## Chat channels
 

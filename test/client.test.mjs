@@ -601,7 +601,9 @@ test('files: one of the conversation\'s folder is picked in the composer, shown 
     if (path.startsWith('/__dsh_bots/files?')) {
       asked.push(path);
       const q = new URL(path, 'http://x').searchParams.get('q');
-      return { ok: true, json: async () => ({ ok: true, root: '/Users/me/bots/workspace', files: q === 'plan' ? ['docs/plan.md'] : ['README.md', 'docs/plan.md', 'src/app.js'], truncated: false }) };
+      const words = String(q).toLowerCase().split(/\s+/).filter(Boolean);
+      const files = ['README.md', 'docs/plan.md', 'src/app.js'].filter((f) => words.every((w) => f.toLowerCase().includes(w)));
+      return { ok: true, json: async () => ({ ok: true, root: '/Users/me/bots/workspace', files, truncated: false }) };
     }
     if (path.endsWith('/images') && init?.method === 'POST') {
       posts.push({ path, body: JSON.parse(init.body) });
@@ -678,18 +680,50 @@ test('files: one of the conversation\'s folder is picked in the composer, shown 
     assert.deepEqual(chips(tree), [], 'the composer is clear again');
     assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-picker']).length, 0, 'and the picker closed');
 
-    // An image dropped on the composer is still attached; a file that is no image is not, and the panel says where it goes.
-    const [box] = findAll(tree, (n) => n.props['data-dsh-bots-composer-box']);
-    box.props.onDrop({ dataTransfer: { types: ['Files'], files: [{ name: 'shot.png', type: 'image/png' }] }, preventDefault() {} });
+    // An image dropped on the composer is still attached.
+    const box = () => findAll(tree, (n) => n.props['data-dsh-bots-composer-box'])[0];
+    const drop = (...files) => box().props.onDrop({ dataTransfer: { types: ['Files'], files }, preventDefault() {} });
+    const search = () => findAll(tree, (n) => n.props['data-dsh-bots-file-search'] === 'chat')[0];
+    drop({ name: 'shot.png', type: 'image/png' });
     tree = await again(5);
     assert.equal(posts.filter((p) => p.path.endsWith('/images')).length, 1);
     assert.deepEqual(findAll(tree, (n) => n.props['data-dsh-bots-attached-item']).map((n) => n.props['data-dsh-bots-attached-item']), ['ready']);
-    assert.doesNotMatch(collect(tree).join('\n'), /Only images can be dropped here/);
-    box.props.onDrop({ dataTransfer: { types: ['Files'], files: [{ name: 'plan.md', type: 'text/markdown' }] }, preventDefault() {} });
+    assert.doesNotMatch(collect(tree).join('\n'), /can't tell where/);
+    // A file that is no image, of which the page does not learn the path, opens the picker on its name: one click references it.
+    drop({ name: 'plan.md', type: 'text/markdown' });
+    tree = await again();
+    assert.equal(posts.filter((p) => p.path.endsWith('/images')).length, 1, 'not uploaded');
+    assert.match(collect(tree).join('\n'), /The panel can't tell where "plan\.md" is: click it in the list to reference it\./);
+    assert.equal(search().props.value, 'plan.md');
+    assert.equal(asked.at(-1), '/__dsh_bots/files?bot=bot-a&q=plan.md');
+    assert.deepEqual(options(tree), ['docs/plan.md']);
+    findAll(tree, (n) => n.props['data-dsh-bots-file-option'] === 'docs/plan.md')[0].props.onClick();
     hooks.rewind();
     tree = panel({});
-    assert.equal(posts.filter((p) => p.path.endsWith('/images')).length, 1, 'not uploaded');
-    assert.match(collect(tree).join('\n'), /Only images can be dropped here\. To point the bot at a file, use "Reference a file"\./);
+    assert.deepEqual(chips(tree), ['docs/plan.md']);
+    // Closed, the picker opens again on an empty search.
+    findAll(tree, (n) => n.props['data-dsh-bots-file-picker-close'] === 'chat')[0].props.onClick();
+    hooks.rewind();
+    tree = panel({});
+    assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-picker']).length, 0);
+    findAll(tree, (n) => n.props['data-dsh-bots-file-button'] === 'chat')[0].props.onClick();
+    tree = await again();
+    assert.equal(search().props.value, '');
+    findAll(tree, (n) => n.props['data-dsh-bots-file-picker-close'] === 'chat')[0].props.onClick();
+    hooks.rewind();
+    tree = panel({});
+    // Images and files dropped together: the image is attached, and a file whose full path the desktop shell tells is referenced by it.
+    drop({ name: 'chart.png', type: 'image/png' }, { name: 'report.pdf', type: 'application/pdf', path: '/Users/me/Desktop/report.pdf' });
+    tree = await again(5);
+    assert.equal(posts.filter((p) => p.path.endsWith('/images')).length, 2);
+    assert.deepEqual(chips(tree), ['docs/plan.md', '/Users/me/Desktop/report.pdf']);
+    assert.equal(findAll(tree, (n) => n.props['data-dsh-bots-file-picker']).length, 0, 'nothing to pick');
+    // A message references ten files at most.
+    drop(...Array.from({ length: 10 }, (_, i) => ({ name: `n${i}.txt`, type: 'text/plain', path: `/Users/me/notes/n${i}.txt` })));
+    tree = await again();
+    assert.equal(chips(tree).length, 10);
+    assert.deepEqual(chips(tree).slice(0, 3), ['docs/plan.md', '/Users/me/Desktop/report.pdf', '/Users/me/notes/n0.txt']);
+    assert.match(collect(tree).join('\n'), /A message references at most 10 files/);
     hooks.runCleanups();
   } finally {
     MESSAGES.pop();
