@@ -5,6 +5,16 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 What changed in each version of Bots, newest first, and what to do after upgrading. Bots tells you when a new
 version is out ([Updates](README.md#updates)).
 
+## 0.20.1 — 2026-11-27
+
+- **Files can be dropped on the message box.** Images are attached as before; another file is referenced by its
+  full path when Harness tells the panel where it is, and otherwise the file picker opens searching its name, so one
+  click references it ([#18](https://github.com/kadaliao/dsh-bots/issues/18)). See
+  [The chat](README.md#the-chat-reply-to-a-message-to-open-a-thread).
+- **The version and the source are at the foot of the rail.** Under the views, Bots shows which version this is and
+  a GitHub mark that opens [kadaliao/dsh-bots](https://github.com/kadaliao/dsh-bots).
+- **Discover and the Plugins page show the Chinese README by default.**
+
 ## 0.20.0 — 2026-11-27
 
 - **A new card takes screenshots and files.** In **New card**, paste, drop or pick screenshots, and pick files of this
