@@ -367,6 +367,16 @@ it or adds to it, it is told that the task waits for your approval, so it sends 
 again. If the work came from a chat app, the bot posts there once that it waits for your approval in DeepSeek Harness;
 a reply in the chat does not decide it.
 
+For work that has to finish while nobody is around, such as scheduled tasks or a batch of tasks, turn on
+**Approvals → Approve tools automatically** on the bot's **Profile** page (off by default). Once saved, every tool call
+the bot would ask about is allowed at once, as if you had pressed **Allow once**, and no card shows. It covers the bot's
+conversation, its threads and the tasks it works on, including those already open; a task follows the bot that works
+on it, not the one that handed it out. Each call allowed this way is logged in Harness's log. Harness's own permission
+settings stay as they are, and turning the switch off makes the bot ask again from its next call. Messages from chat
+apps and GitHub issues reach the same conversations, so once it is on, what they say can lead the bot to change files
+outside the workspace or read credentials on this computer without anyone confirming it. Only turn it on for a bot you
+trust with your computer. Only the panel changes it: neither the bots' own tools nor team templates can.
+
 ## Built on what Harness already does
 
 A bot works in ordinary Harness conversations, so everything Harness can do, a bot can do:

@@ -1747,6 +1747,22 @@ test('profile abilities: only available ones show, and toggling rewrites the den
   v.hooks.runCleanups();
 });
 
+test('profile: approving tools automatically is off by default, warns when switched on, and is saved with the bot (#20)', async () => {
+  const v = await openTab('profile', 'bot-a');
+  const box = () => findAll(v.tree, (n) => n.props['data-dsh-bots-auto-approve'] !== undefined)[0];
+  const note = () => collect(findAll(v.tree, (n) => n.props['data-dsh-bots-auto-approve-note'])[0]).join('');
+  assert.equal(box().props['data-dsh-bots-auto-approve'], false);
+  assert.match(note(), /^Off: each such tool call waits for you/);
+  findAll(v.tree, (n) => n.props['data-dsh-bots-auto-approve-switch'])[0].props.onClick({});
+  await v.rerender(1);
+  assert.equal(box().props['data-dsh-bots-auto-approve'], true);
+  assert.match(note(), /runs without asking.*GitHub issues.*credentials/);
+  findAll(v.tree, (n) => n.props['data-dsh-bots-save'])[0].props.onClick();
+  await flush();
+  assert.equal(v.posts.find((p) => p.path.endsWith('/save')).body.bot.autoApprove, true);
+  v.hooks.runCleanups();
+});
+
 test('apps: MCP servers from other agents import by from/name; taken ones are disabled', async () => {
   const v = await openTab('apps', 'bot-b');
   assert.match(collect(v.tree).join(' '), /Found 3 MCP servers \(Codex, Claude Code\)/);

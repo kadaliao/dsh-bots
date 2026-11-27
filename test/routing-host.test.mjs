@@ -1799,6 +1799,52 @@ test('a tool approval the window answers, the call withdraws, or the window fail
   env.dispose();
 });
 
+test('a bot set to approve tools automatically (#20): only from the panel, its home and its tasks are allowed without asking, other bots still ask', async () => {
+  const env = boot();
+  const { h, api } = env;
+  const forge = api.store.save({ name: 'Forge' });
+  const atlas = api.store.find('atlas');
+  assert.equal('autoApprove' in forge, false, 'off by default');
+  // The bots' own tools cannot turn it on.
+  const sid = await api.userSend(atlas, 'Add a skill');
+  await h.tools.get('bot_update').execute({ bot: '@forge', autoApprove: true, auto_approve: true }, { agent: h.agentsById.get(sid) });
+  assert.equal(api.store.get(forge.id).autoApprove, undefined);
+  // The panel turns it on.
+  const saved = api.routes.save.post({ bot: { id: forge.id, autoApprove: true } });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.bot.autoApprove, true);
+  // A task Forge works on, handed out by the dispatcher: Forge's choice applies, nobody is asked.
+  const [r] = await h.step(sid, { calls: [{ name: 'bot_send_message', args: { to: '@forge', text: 'Write the skill.' } }] });
+  const t = api.tickets.get(r.ticket.id);
+  await h.step(t.sessionId, { answer: 'Writing.' });
+  const worker = h.agentsById.get(t.sessionId);
+  let asked = 0;
+  const native = () => (asked++, new Promise(() => {}));
+  assert.equal(await approve(h, worker, { displayReason: WRITE_SKILL, native }).out, 'allowed-once');
+  assert.deepEqual([api.state().asks, asked], [[], 0]);
+  // Its home too; a call already stopped is not allowed.
+  const home = h.agentsById.get(await api.userSend(api.store.get(forge.id), 'Clean the build folder'));
+  assert.equal(await approve(h, home, { toolName: 'bash', native }).out, 'allowed-once');
+  const stop = new AbortController();
+  stop.abort(new Error('stopped'));
+  assert.equal(await approve(h, home, { signal: stop.signal, native }).out, 'cancelled');
+  assert.deepEqual([api.state().asks, asked], [[], 0]);
+  // The dispatcher keeps asking.
+  approve(h, h.agentsById.get(sid), { native });
+  assert.equal(api.state().asks.length, 1);
+  assert.equal(api.state().asks[0].botId, atlas.id);
+  await decideRoute(api, api.state().asks[0].id, { outcome: 'rejected' });
+  // Turned off, Forge asks again, in sessions already open too.
+  api.routes.save.post({ bot: { id: forge.id, autoApprove: false } });
+  assert.equal(api.store.get(forge.id).autoApprove, undefined);
+  const again = approve(h, worker, { native });
+  assert.equal(api.state().asks.length, 1);
+  assert.equal(api.state().asks[0].botId, forge.id);
+  await decideRoute(api, api.state().asks[0].id, { outcome: 'allowed-once' });
+  assert.equal(await again.out, 'allowed-once');
+  env.dispose();
+});
+
 test('a task waiting for approval: its row says so, the watchdog leaves it alone, and the bot that asked is told to send the person there', async () => {
   const clock = { t: Date.now() };
   const env = boot({ now: () => clock.t });
