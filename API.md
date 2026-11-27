@@ -820,6 +820,12 @@ listens first (`prepend`), other Sessions pass by untouched, and the forwarded r
 the panel decided. An abort of the call settles it `cancelled`; a window that fails, `unavailable`.
 Everything is kept in memory only.
 
+A bot with `autoApprove: true` (#20) has every `approval/request` of its Sessions (home, discussions, and the task
+Sessions it executes) settled `allowed-once` at once, without calling `next()`: no Ask is recorded, no window card shows,
+and the Host logs one info line per call. A call whose signal has already aborted settles `cancelled`. The field is
+stored only when true and set only through the panel's `POST /save` (`bot.autoApprove`); `bot_create`, `bot_update`
+and team templates do not set it. It changes no Harness permission preset; turned off, the next approval asks again.
+
 ```ts
 Ask = { id, botId, sessionId, ticketId?, at, native?: true, continued?: true,
         questions: { id, question, header?, detail?, options?: { label, description? }[], multiSelect? }[],

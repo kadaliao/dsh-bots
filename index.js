@@ -3969,7 +3969,8 @@ export function apply(ctx, config, deps = {}) {
    * `approval`), so the panel, the task's row and its chat say it waits for them, and its requester hears
    * so. It settles with whichever answers first: the window's card (`next()`) or the panel (`answerAsk`:
    * allow once, or reject); the other card then closes. An abort of the call withdraws it. Approvals of
-   * other Sessions pass by untouched.
+   * other Sessions pass by untouched. A bot the person set to approve tools automatically (#20) has each
+   * one allowed once at once, with a log line, and nobody is asked.
    */
   function approvalRequest(request, next) {
     const sessionId = request?.agent?.session?.id;
@@ -3977,6 +3978,11 @@ export function apply(ctx, config, deps = {}) {
     if (!bot) return next();
     const ticket = ticketOf(sessionId);
     const tool = typeof request.toolName === 'string' ? request.toolName.trim() : '';
+    if (bot.autoApprove === true) {
+      if (request.signal instanceof AbortSignal && request.signal.aborted) return Promise.resolve('cancelled');
+      ctx.logger?.info?.(`bots: allowed ${tool || 'a tool'} for @${bot.handle} without asking (approves tools automatically)${ticket ? ` in task ${ticket.id}` : ''}`);
+      return Promise.resolve('allowed-once');
+    }
     const callId = typeof request.callId === 'string' ? request.callId : '';
     const display = approvalDisplay(request.displayReason);
     const reason = typeof request.reason === 'string' ? clip(request.reason.trim(), 600).text : '';
